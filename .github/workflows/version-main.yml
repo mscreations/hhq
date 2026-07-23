@@ -1,0 +1,76 @@
+name: Version main release
+
+# On a merged dev->main pull request: tags the next minor release (e.g.
+# v1.2.0), cuts a GitHub Release for it (which triggers publish.yml, and is
+# how the parent dashboard's update-checker knows the "latest release"), then
+# opens and auto-merges a PR syncing main back into dev so dev's next push
+# picks up the new major.minor line. See version-dev.yml and README.md's
+# versioning section for the overall scheme.
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: version-main
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  tag-release-and-sync-dev:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compute and push next release tag
+        id: release
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force
+
+          LAST_RELEASE=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-dev$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+          if [ -z "$LAST_RELEASE" ]; then
+            echo "No existing release tag found. The bootstrap tag v1.0.0 must be pushed to main manually once - see README.md's versioning section." >&2
+            exit 1
+          fi
+
+          MAJOR=$(echo "$LAST_RELEASE" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1/')
+          MINOR=$(echo "$LAST_RELEASE" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\2/')
+          NEW_MINOR=$((MINOR + 1))
+          NEW_TAG="v${MAJOR}.${NEW_MINOR}.0"
+
+          echo "Computed new release version: $NEW_TAG"
+          git tag "$NEW_TAG"
+          git push origin "$NEW_TAG"
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        run: gh release create "${{ steps.release.outputs.tag }}" --target main --generate-notes --title "${{ steps.release.outputs.tag }}"
+
+      - name: Open and auto-merge sync-back PR into dev
+        run: |
+          set -euo pipefail
+          BRANCH="sync/main-to-dev-${{ steps.release.outputs.tag }}"
+
+          git fetch origin dev
+          git checkout -B "$BRANCH" origin/dev
+          # main only ever gains commits via a PR from dev, so this is
+          # expected to always be a clean fast-forward under normal flow.
+          git merge --ff-only main
+          git push origin "$BRANCH"
+
+          PR_URL=$(gh pr create --base dev --head "$BRANCH" \
+            --title "Sync main ${{ steps.release.outputs.tag }} back to dev" \
+            --body "Automated post-merge sync so dev picks up ${{ steps.release.outputs.tag }}.")
+          gh pr merge "$PR_URL" --merge --delete-branch

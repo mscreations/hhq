@@ -24,6 +24,14 @@
     {{template "parent/_plugins" .}}
   </main>
 
+  <footer class="dashboard-footer">
+    <span>{{.AppTitle}} v{{.Version}}</span>
+    <a href="https://github.com/mscreations/hhq" target="_blank" rel="noopener">GitHub</a>
+    {{if .UpdateAvailable}}
+    <a class="update-badge" href="{{.LatestReleaseURL}}" target="_blank" rel="noopener">Update Available</a>
+    {{end}}
+  </footer>
+
   <div id="settings-modal-overlay" class="modal-overlay" onclick="if (event.target === this) closeSettingsModal()" {{if not .SettingsError}}hidden{{end}}>
     <div class="modal">
       <button class="modal-close" onclick="closeSettingsModal()" aria-label="Close">&times;</button>

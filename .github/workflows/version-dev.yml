@@ -1,0 +1,59 @@
+name: Version dev build
+
+# Tags every push to dev with the next patch version for the currently
+# promoted major.minor line (e.g. v1.2.4-dev), which in turn triggers
+# publish.yml to build and push the image. See version-main.yml for how
+# major.minor gets promoted, and README.md's versioning section for the
+# overall scheme.
+on:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: version-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  tag-dev-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute and push next dev version tag
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force
+
+          # The highest release tag (vX.Y.0, no "-dev" suffix) reachable from
+          # this commit is the currently-promoted major.minor line. dev is
+          # always fast-forwarded past main's latest release tag by the
+          # sync-back PR in version-main.yml, so "reachable from HEAD" is
+          # sufficient here (no need for an explicit merge-base with main).
+          RELEASE_TAG=$(git tag --merged HEAD -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-dev$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "No release tag found reachable from HEAD. Expected the bootstrap tag v1.0.0 to exist on main and be present in dev's history - see README.md's versioning section." >&2
+            exit 1
+          fi
+
+          MAJOR=$(echo "$RELEASE_TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1/')
+          MINOR=$(echo "$RELEASE_TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\2/')
+
+          LAST_PATCH=0
+          for t in $(git tag -l "v${MAJOR}.${MINOR}.*-dev"); do
+            p=$(echo "$t" | sed -E "s/^v${MAJOR}\.${MINOR}\.([0-9]+)-dev\$/\1/")
+            if [ "$p" -gt "$LAST_PATCH" ]; then LAST_PATCH=$p; fi
+          done
+
+          NEXT_PATCH=$((LAST_PATCH + 1))
+          NEW_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}-dev"
+
+          echo "Computed new dev version: $NEW_TAG"
+          git tag "$NEW_TAG"
+          git push origin "$NEW_TAG"

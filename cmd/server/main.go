@@ -27,11 +27,17 @@ import (
 	"github.com/mscreations/hhq/internal/handlers"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
 	webassets "github.com/mscreations/hhq/web"
 )
+
+// Version is stamped at build time via -ldflags "-X main.Version=...".
+// "dev" is the fallback for a plain `go build` with no ldflags (e.g. running
+// tests, or a developer building locally without `make build VERSION=...`).
+var Version = "dev"
 
 // attachmentLabel derives a human-readable label for an event attachment
 // link from the last path segment of its URI (e.g. "invoice.pdf" from
@@ -234,6 +240,7 @@ func main() {
 	}
 
 	weatherCache := &weather.Cache{}
+	releaseCache := &release.Cache{}
 
 	templateFuncs := template.FuncMap{
 		"colorName":       models.ColorName,
@@ -246,6 +253,7 @@ func main() {
 
 	app := &handlers.App{
 		Cfg:              cfg,
+		Version:          Version,
 		Users:            &models.UserStore{DB: conn},
 		Sessions:         &models.SessionStore{DB: conn},
 		CalendarAccounts: &models.CalendarAccountStore{DB: conn},
@@ -257,6 +265,7 @@ func main() {
 		Settings:         settingsStore,
 		Weather:          weatherCache,
 		Plugins:          &models.PluginStore{DB: conn},
+		Release:          releaseCache,
 		Approval:         auth.NewApprovalLinkSigner(approvalSecret),
 		Invite:           auth.NewApprovalLinkSigner(inviteSecret),
 		PasswordReset:    auth.NewApprovalLinkSigner(passwordResetSecret),
@@ -330,6 +339,7 @@ func main() {
 		LoginLimiter:     app.LoginLimiter,
 		Weather:          weatherCache,
 		Plugins:          app.Plugins,
+		Release:          releaseCache,
 	}
 
 	logging.Debugf("starting background scheduler (calendar sync every %s, chore generation, session cleanup, weekly report)", cfg.CalendarSyncInterval)

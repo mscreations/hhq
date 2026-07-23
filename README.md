@@ -99,7 +99,7 @@ the login page, which emails them a link (signed with the separate
 `go.sum` is committed, so a fresh clone should build as-is:
 
 ```bash
-cd happyhome-quest
+cd hhq
 go build ./...   # sanity check everything compiles
 go test ./...    # full suite; DB-backed tests need Docker (testcontainers), others still run without it
 ```
@@ -399,332 +399,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `WEATHER_LAT`, `WEATHER_LON` | no | Explicit coordinates to seed the weather location on first startup only, skipping geocoding. If `WEATHER_LOCATION` is also set, it's used only as the display name. |
 | `WEATHER_UNITS` | no (default `imperial`) | `imperial` or `metric`, used only when seeding the location via the variables above |
 | `LOG_LEVEL` | no (default `info`) | Set to `debug` for verbose logs: calendar sync detail (principal/home-set discovery, event counts per calendar), email send attempts, per-request logging, chore state transitions, etc. |
-
-## Changelog
-
-**Feature: per-child avatar photos:**
-- Each child (and parent) can now have an uploaded photo avatar, shown on the
-  kiosk chore tracker and the parent dashboard's Children and Pending
-  Approvals cards instead of just the color swatch. Upload/remove via the
-  Children card (PNG/JPEG/GIF, max 2 MB, 4096x4096px) - allowed even for
-  bootstrap-managed children, since avatars have no `children.json`
-  equivalent to conflict with directly.
-- `children.json` gained an optional `avatar_file` field to provide an
-  avatar for bootstrap-managed children from a mounted image file instead of
-  the dashboard - see "Bootstrap config files" above for its overwrite-on-
-  restart behavior.
-- Avatars are stored directly in Postgres (`hhq_users.avatar_image` BYTEA),
-  not a filesystem/volume, matching this app's existing pattern for other
-  binary data (encrypted CalDAV credentials) since there's no shared/
-  persistent volume infrastructure otherwise.
-
-**Feature: bootstrap children/chores/assignments from config; calendars.json replaces CALENDAR_ACCOUNTS:**
-- Replaced the `CALENDAR_ACCOUNTS`/`CALENDAR_ACCOUNTS_FILE` env vars with a
-  `CONFIG_DIR` directory (default `/config`) scanned on every startup for up
-  to four optional JSON files: `calendars.json` (same schema/behavior the env
-  var previously had), plus new `children.json`, `chores.json`, and
-  `assignments.json` for bootstrapping children, the chore catalog, and
-  per-child chore schedules the same way. Each file is independently
-  optional and reconciled by name (or, for assignments, by child+chore)
-  against the database on every startup, using the same
-  create-if-missing/refresh-if-bootstrap-managed/skip-on-UI-collision
-  pattern `CALENDAR_ACCOUNTS` established.
-- `users`, `chores`, and `chore_definitions` all gained a
-  `bootstrap_managed` column, mirroring `calendar_accounts`'s existing one.
-  Children, chores, and assignments created this way show as
-  "Administratively managed" on the parent dashboard and can't be
-  edited/removed there.
-
-**Feature: bootstrap weather location from config:**
-- `WEATHER_LOCATION` (geocoded free-text place name) and/or
-  `WEATHER_LAT`/`WEATHER_LON` (explicit coordinates), plus optional
-  `WEATHER_UNITS`, seed the weather widget's location on first startup so a
-  fresh deployment shows a forecast immediately instead of waiting for a
-  parent to set one via the dashboard.
-- Unlike `CALENDAR_ACCOUNTS`, this only seeds - once a location is
-  configured (by this or the dashboard), these env vars are ignored on
-  every subsequent restart, so a parent's later change via the UI sticks.
-
-**Feature: bootstrap calendar accounts from config:**
-- `CALENDAR_ACCOUNTS` (or `CALENDAR_ACCOUNTS_FILE`, via the existing `_FILE`
-  suffix convention) accepts a JSON array of calendar accounts, supporting
-  any count (0, 1, or many), reconciled against the database on every
-  startup instead of only creating them once.
-- Accounts created this way are marked "Administratively managed" and can't
-  be edited or deleted through the parent dashboard, since the config file
-  (not the UI) is their source of truth and would otherwise be silently
-  overwritten on the next restart.
-
-**Chore-defs grouped by child + weather/event modal cross-trigger fix:**
-- The parent dashboard's "Chores" card now groups definitions into a
-  collapsible panel per child (`<details>`/`<summary>`) instead of one flat
-  table with a repeated child-name column - easier to scan with more than
-  one or two kids. Children with zero chores still get a panel, so the
-  empty state is visible.
-- Fixed the weather-detail modal sometimes popping open in response to an
-  unrelated htmx request elsewhere on the kiosk page (e.g. tapping a
-  calendar event) - `hx-on::before-request` now checks `event.detail.elt
-  === this` before opening, so it only reacts to requests the weather
-  widget itself issued.
-
-**Feature: kiosk event-detail modal:**
-- Tapping a calendar/agenda event on the kiosk now opens a detail popup
-  (organizer, attendees with RSVP status, attachments, description, full
-  time range) instead of just the compact list-view summary.
-- `calendar_events_cache` gained `description`, `organizer_name`,
-  `organizer_email`, and JSON-encoded `attendees`/`attachments` columns.
-  CalDAV sync now requests `DESCRIPTION`/`ORGANIZER`/`ATTENDEE`/`ATTACH`
-  properties in addition to the existing explicit prop list. The new detail
-  fields are only fetched on demand (`GET /kiosk/events/{id}`), not on every
-  60s list poll.
-- Attachment links show a filename derived from the attachment's URI
-  (the stored `FMTTYPE` is a MIME type, not a filename, so it's not fit for
-  display on its own).
-
-**Feature: weather widget:**
-- Added a kiosk header widget (icon + current temperature) with a
-  click-through modal showing the hourly and 7-day forecast, backed by
-  [Open-Meteo](https://open-meteo.com/) (free, keyless - no new secret to
-  manage). Location is set via free-text search on the parent dashboard's
-  Settings card and geocoded automatically; units (imperial/metric) are
-  configurable there too.
-- Forecast data lives only in an in-memory cache, refreshed by a background
-  job on the same interval pattern as calendar sync (default 15 minutes,
-  `WEATHER_REFRESH_INTERVAL_MINUTES`) - no new database table.
-
-**Fix: SMTP_FROM with a display name rejected by Fastmail:**
-- Setting `SMTP_FROM` to `"HappyHome Quest <hhq@example.com>"` made
-  Fastmail reject the SMTP envelope's `MAIL FROM` (RFC 5321 requires a bare
-  mailbox there; the display name belongs in the `From:` header instead,
-  per RFC 5322). `SMTP_FROM` must now be a bare address; the friendly
-  sender name shown in recipients' inboxes is sourced from the app's "App
-  Title" setting instead (see the env var table above).
-
-**Rename: Family Calendar -> HappyHome Quest:**
-- Display name is now "HappyHome Quest"; the Go module, binary, Docker
-  image, and every Kubernetes resource use the short identifier `hhq`
-  (previously the placeholder name `famcal`). Cookie name, default
-  `SMTP_FROM`, and every "Family Calendar" string in templates/emails
-  updated to match.
-
-**Feature: parent dashboard + kiosk now use htmx (no more full-page reloads):**
-- The parent dashboard's forms (children, parents, calendar accounts,
-  chores, approvals) now swap in updated fragments via htmx instead of a
-  full page reload per action, addressing the "smoother, more client-side"
-  feel originally requested. Every form still has its original
-  `method`/`action` too, so it degrades to a normal POST+redirect with
-  JS disabled.
-- The kiosk's three panels (agenda/calendar/chores) poll via htmx
-  (`hx-trigger="every 60s"`) instead of hand-rolled `fetch()` JS; tapping a
-  chore posts via htmx and swaps in the refreshed chores fragment
-  immediately, rather than waiting for the next poll.
-- `htmx.min.js` is vendored into the binary (no CDN dependency), consistent
-  with this app shipping as a single self-contained binary.
-
-**Automated test suite added across the entire codebase:**
-- A full test suite now exists for every package (22 files, 140+ test
-  functions): `internal/util`, `internal/auth`, `internal/models`,
-  `internal/caldav`, `internal/report`, `internal/config`, `internal/email`,
-  `internal/scheduler`, `internal/handlers`, and an end-to-end
-  `cmd/server/router_test.go` driving the real router over real HTTP
-  (including a flagship test that taps a chore, waits for the real
-  approval email via a fake SMTP server, clicks the real signed approval
-  link, and confirms the chore lands `approved` in Postgres).
-- DB-backed tests use `testcontainers-go` against a real Postgres (one
-  container per test binary, truncated between tests) rather than mocking
-  `database/sql`, since this app relies on Postgres-specific SQL
-  (`make_interval`, `ON CONFLICT`, CHECK constraints) a generic mock can't
-  faithfully exercise. `testutil.RequireDB` skips (not fails) if Docker
-  isn't available, so `go test ./...` still runs without it, just with
-  reduced coverage.
-- No CI workflow is set up yet - `go test ./...` needs to pass locally or
-  in whatever CI you add; DB-backed tests need a Docker-capable runner.
-
-**Feature: per-calendar colors, enable/disable, and manual resync:**
-- Added `/setup`: a browser-based alternative to the `BOOTSTRAP_PARENT_*` env
-  vars for creating the first parent account. Only reachable while zero
-  parent users exist; self-disables (redirects to `/login`) the moment one
-  does, whether created via `/setup`, the env vars, or an accepted invite.
-  The env-var bootstrap path is unchanged and still works exactly as before.
-- Replaced the dashboard's old "type a new parent's password for them" flow
-  with an invite system: entering a name + email creates a pending parent
-  row (`password_hash` left `NULL`, which the existing login check already
-  refuses to authenticate) and emails them a signed, expiring link
-  (`/invite/accept`) to set their own password. New `users.invited_at`
-  column (migration `00006_invite_tracking.sql`) drives a "Pending since..."
-  status and a "Resend Invite" button on the dashboard's Parents card.
-- Invite links are signed with a new dedicated `INVITE_SECRET`, deliberately
-  kept separate from `APPROVAL_SECRET` (which signs chore-approval email
-  links) for isolation - reuses the same generic HMAC signed-link mechanism
-  (`internal/auth/approval_token.go`) with a new `ActionInviteAccept` action
-  and its own signer instance rather than a new implementation.
-- Neither `/setup` nor `/invite/accept` carry a CSRF token, matching the
-  existing precedent set by `/approval/respond`: both are only reachable
-  pre-login, and the signed/expiring token in the URL (or, for `/setup`, the
-  narrow zero-parents window) is itself the proof of authorization.
-
-**Feature: per-calendar colors, enable/disable, and manual resync:**
-- Restructured the data model: color and enabled/disabled now live on
-  individual *calendars* (a new `calendars` table) rather than on the
-  *account* (login credentials). One Fastmail or iCloud login often has
-  several calendars (Home, Work, Kids...), and each now gets its own
-  auto-assigned, visually distinct color and its own on/off toggle,
-  independent of the others.
-- After adding (or editing) a calendar account, the app immediately
-  discovers its calendars (a fast listing call, no event fetching) so the
-  parent dashboard shows the calendar list with real names and colors right
-  away, without waiting for the next scheduled sync - full event fetching
-  then continues in the background as before.
-- Colors are assigned from a curated 16-color palette, picking the first
-  color not already in use by any other calendar (falls back to cycling if
-  you have more than 16 calendars).
-- Added a "Resync Now" button per account on the parent dashboard, which
-  triggers an immediate discovery + event sync in the background rather
-  than waiting for the next scheduled tick.
-- Added a per-calendar on/off toggle. Disabling a calendar hides its events
-  from the kiosk **immediately** (filtered at read time, not just at the
-  next sync/prune), and its events remain excluded from the cache until
-  re-enabled.
-- Database migration: existing `calendar_accounts.color`/`.enabled` columns
-  are dropped; `calendar_events_cache` now references the new `calendars`
-  table instead of `calendar_accounts` directly. The events cache (fully
-  ephemeral - repopulated every sync) is safely cleared as part of the
-  migration rather than attempting a complex historical-data mapping;
-  nothing is lost, it refills within one sync cycle.
-- Verified end-to-end against a real Postgres instance and the actual
-  compiled binary: (1) simulated a real user's pre-upgrade database by
-  applying migrations 1-4 with legacy-shaped data, then applied the new
-  migration and confirmed a clean, safe transition (a real bug was caught
-  and fixed this way - see `CLAUDE.md` for detail); (2) built a fake
-  multi-calendar CalDAV server (Home + Work) and drove the actual app over
-  real HTTP - logged in, created an account, confirmed both calendars were
-  discovered with distinct colors, confirmed events were correctly
-  attributed to their own calendar, disabled one calendar and confirmed its
-  events vanished from the kiosk immediately, and confirmed the "Resync
-  Now" button actually repopulates a cleared event cache.
-
-**Round 6 fix — iCloud returns events with empty properties:**
-- Fastmail now syncs correctly, but iCloud calendars were coming back with
-  the VEVENT component present (so `flattenEvents` didn't error) but
-  completely empty of properties - no `SUMMARY`, no `DTSTART`, nothing -
-  so every iCloud event was silently dropped (no `UID`, so `flattenEvents`
-  skips it) rather than erroring.
-- Root cause: round 5's fix requested `AllProps: true` on the VEVENT
-  component, which Cyrus (Fastmail) honors correctly, but Apple's iCloud
-  CalDAV server does **not** reliably honor `<C:allprop/>` nested inside a
-  `<C:comp>` - it returns `200 OK` with the component present but silently
-  empty, rather than erroring, which is a particularly sneaky failure mode
-  since nothing *looks* wrong until you inspect the actual property list.
-- Fix: switched from `AllProps: true` to an explicit named property list
-  (`UID`, `SUMMARY`, `LOCATION`, `DTSTART`, `DTEND`, `DURATION`) - this
-  matches both Apple's own documented working CalDAV examples and the
-  RFC 4791 canonical `calendar-query` example, and continues to work
-  correctly against Fastmail (regression-tested).
-- Verified by building a fake CalDAV server that reproduces the exact real
-  behavior (empty props on `allprop`, full props on explicit prop names),
-  running the actual compiled binary against it, and confirming via the
-  logged request body that explicit named props are now sent - plus a full
-  event (including `LOCATION`) landed correctly in the database. Also
-  re-ran the Fastmail regression test with the new query shape to confirm
-  no breakage there.
-
-**Round 5 fix — 400 Bad Request on the actual calendar-query REPORT:**
-- After round 4 fixed discovery (no more 405), the next request in the chain
-  - the REPORT that actually fetches event data - started failing with
-  `400 Bad Request` from Cyrus (Fastmail's CalDAV server).
-- Root cause: the CalDAV `calendar-query` REPORT request requires **two**
-  things per RFC 4791 §9.6 - a `CompFilter` (which objects to match) and a
-  `CompRequest` (what data to return for matches). Our code only set
-  `CompFilter`; `CompRequest` was left as its zero value, which encodes to
-  an invalid `<comp name=""/>` element with no properties requested at all.
-  Cyrus correctly rejects that as malformed.
-- Fix: `CompRequest` is now set to request `VCALENDAR > VEVENT` with
-  `AllProps: true`, so the full event (summary, location, start/end, etc.)
-  comes back rather than an empty/partial response.
-- Verified against a real, independently-reported instance of this exact
-  bug: found a GitHub issue in the `go-webdav` repo itself where another
-  developer hit the identical 400 against Fastmail, plus their working
-  fix (a real-world Fastmail CalDAV tool on GitHub) confirming the correct
-  request shape. Then built a strict local mock server that inspects the
-  raw REPORT XML body and rejects anything with an empty comp name or
-  missing `<prop>` section (mimicking Cyrus's actual behavior), ran the
-  real compiled hhq binary against it, and confirmed both the exact XML
-  produced is correct AND a full event - including `LOCATION` - round-trips
-  into the database correctly.
-
-**Round 4 fix — the REAL Fastmail 405 root cause:**
-- Round 2's fix (adding `FindCurrentUserPrincipal` discovery) was necessary
-  but not sufficient. Proved with a local mock server that even with a
-  correctly-configured base URL (trailing slash or not - tried both, as you
-  did), go-webdav's `FindCurrentUserPrincipal` always issues its discovery
-  PROPFIND against `path.Join(basePath, "")`, and Go's `path.Join` silently
-  *strips* any trailing slash. So a base URL of `.../dav/` still results in
-  an actual request to `.../dav` (no slash) - and Fastmail's CalDAV server
-  returns 405 for PROPFIND on that exact slash-less path, regardless of
-  which URL variant you configure. This explains exactly why trying both
-  URL forms didn't help - the bug is in how the discovery request itself
-  gets built, not in the URL you type in.
-- Fix: for `provider=Fastmail` specifically, discovery is skipped entirely.
-  Fastmail's principal URL scheme is stable and documented
-  (`https://caldav.fastmail.com/dav/principals/user/<email>/`), so it's
-  constructed directly from the account's username and used straight away
-  for the calendar-home-set lookup. iCloud and generic CalDAV accounts still
-  use standard RFC 6638 discovery, which isn't affected by this issue.
-- Verified two ways before shipping: (1) reproduced the exact 405 against a
-  local mock server built specifically to mimic Fastmail's behavior, proving
-  the root-cause theory; (2) ran the *actual compiled hhq binary* against
-  a fake CalDAV server serving realistic discovery/calendar/event XML
-  responses, end-to-end through the real scheduler, and confirmed a real
-  event landed in the `calendar_events_cache` table. See `CLAUDE.md` for
-  the full verification transcript if you want to reproduce it.
-
-**Round 3 fixes:**
-- Fixed `ListInWindow`'s SQL query erroring on the days parameter (Postgres
-  couldn't infer a type for `$1 || ' days'` since `||` between an integer
-  parameter and a text literal is ambiguous). Switched to
-  `make_interval(days => $1)`, which takes the integer directly - cleaner
-  than converting to a string in Go and avoids the type-inference issue
-  entirely.
-- Fixed `"no such template \"kiosk/_chores\""` (and the same for `_agenda`/
-  `_calendar`): Go's `//go:embed templates static` directive silently
-  *excludes* any file or directory whose name starts with `_` or `.`. Since
-  the kiosk fragment templates are deliberately named with a leading
-  underscore (`_chores.html` etc., to signal "partial, not a full page"),
-  they were dropped from the embedded filesystem entirely - only
-  `kiosk/index.html` made it in. Fixed by using `//go:embed all:templates
-  all:static` instead. This was verified end-to-end: installed a real
-  Postgres, ran actual migrations, started the actual compiled binary, and
-  curled `/kiosk/fragments/chores`, `/agenda`, and `/calendar` directly,
-  including inserting real calendar event rows to confirm the 7-day window
-  query returns exactly the events it should (today + 3-days-out included,
-  10-days-out correctly excluded) - see `CLAUDE.md` for full verification
-  detail if you want to reproduce.
-
-**Round 2 fixes** (in response to real-world testing):
-- Rejected chores can now be tapped on the kiosk to resubmit for approval
-  (previously nothing happened - tapping now works the same as an incomplete
-  chore, transitioning `rejected` -> `pending_approval` again).
-- Calendar accounts can now be edited and deleted from the parent dashboard
-  (`/parent/calendar-accounts/{id}/edit`), including rotating the app password
-  without needing to delete and re-add the account.
-- Adding or editing a calendar account now triggers an immediate background
-  sync instead of waiting for the next scheduled tick or an app restart.
-- Fixed a `405 Method Not Allowed` error syncing Fastmail: the CalDAV client
-  was skipping the current-user-principal discovery step (RFC 6638) and
-  querying the calendar-home-set directly against the bare CalDAV root, which
-  Fastmail rejects. It now discovers the principal first, as it should.
-- Parent dashboard now has a dark mode toggle (persisted in the browser via
-  `localStorage`, respects OS preference on first visit).
-- Fixed the kiosk panicking with `pattern matches no files` / needing
-  `../../web/static` workarounds: templates and static assets are now
-  embedded into the compiled binary via `go:embed` rather than read from
-  disk relative to the working directory. The app runs correctly no matter
-  where the binary is launched from.
-- Added a leveled logger (`internal/logging`) controlled by `LOG_LEVEL`
-  (`debug`/`info`/`warn`/`error`, default `info`). Debug mode adds detailed
-  logging across startup, CalDAV sync (principal/home-set discovery, event
-  counts per calendar), email sends, chore state transitions, and per-request
-  logging - see the `LOG_LEVEL` row in the env var table below.
+| `RELEASE_CHECK_INTERVAL_MINUTES` | no (default 1440) | How often the app polls GitHub for a newer release, to drive the "Update Available" badge on the parent dashboard |
 
 ## Known limitations & next steps
 
@@ -732,53 +407,62 @@ This is a solid, working foundation, but some things are intentionally
 simplified given the scope and your "learning Go" goal. In rough priority order
 if you keep building on this:
 
-1. **Google Calendar isn't implemented** (per your instruction to defer it) -
-   `internal/caldav/google_todo.go` documents exactly what's needed: an OAuth2
-   app registration, consent flow, and a `SyncGoogleAccount` function mirroring
-   the existing CalDAV sync.
-2. **Authentik/OIDC isn't implemented yet**, but the schema is ready for it:
+1. **Authentik/OIDC isn't implemented yet**, but the schema is ready for it:
    `users.auth_provider` and `users.external_subject` exist specifically so you
    can add an OIDC login path later that creates/matches a user by subject
    claim, without a migration. You'd add an `oidc.go` in `internal/auth`
    implementing the standard authorization-code flow, and a `/login/oidc`
    route alongside the existing local login.
-3. **Approval links act on GET requests** for simplicity (see the comment in
+2. **Approval links act on GET requests** for simplicity (see the comment in
    `internal/handlers/approval.go`). If you notice a chore getting
    auto-approved/rejected without anyone clicking (some email clients
    prefetch links for safety scanning), switch that handler to render a
    confirmation page with a POST button instead.
-4. **Single replica only.** The scheduler (calendar sync, weekly email,
+3. **Single replica only.** The scheduler (calendar sync, weekly email,
    weather refresh) has no distributed locking, so running 2+ replicas would
    double-sync and double-email. Fine for a single-family kiosk app; would
    need a leader election or moving the scheduler to a separate CronJob if
    you ever needed to scale the web tier.
-5. **CalDAV recurring event expansion** relies on the server correctly
+4. **CalDAV recurring event expansion** relies on the server correctly
    expanding recurring events for a calendar-query time-range filter, which
    both Fastmail and iCloud do - but if you add a more obscure CalDAV server
    later, some may return raw `RRULE`s needing client-side expansion instead
    (not implemented here).
-6. **The chore report is generated on-demand from live data**, not stored -
+5. **The chore report is generated on-demand from live data**, not stored -
    if you want historical reports to remain stable/auditable even after data
    changes later, consider persisting generated PDFs (e.g. to an object store)
    with a `weekly_reports` table indexing them by week.
-7. **Calendar account edit/delete has no confirmation on edit** (delete does
+6. **Calendar account edit/delete has no confirmation on edit** (delete does
    have a JS `confirm()` prompt). Also, the provider field can't be changed
    after creation - delete and re-add if you need to switch a Fastmail
    account to "Other CalDAV" or similar.
-8. **Points/rewards system**: only point *values per chore* and a weekly
+7. **Points/rewards system**: only point *values per chore* and a weekly
    points total in the PDF report exist yet - no redemption/rewards feature
    has been built on top of points.
-9. **Dark mode preference is per-browser (`localStorage`), not per-user in
+8. **Dark mode preference is per-browser (`localStorage`), not per-user in
    the database** - if the same parent logs in from a different device, the
    preference doesn't follow them.
-10. **No CI workflow yet** - `go test ./...` (a full suite covers every
-    package, see the Changelog) needs Docker for its Postgres-backed tests;
-    it isn't wired into any CI pipeline in this repo, only run locally.
 
-Previously listed here and since resolved: automated tests (a full suite
-now exists across every package) and the parent dashboard's full-page
-reloads (now htmx fragment swaps, matching the kiosk's existing pattern) -
-see the Changelog above for both.
+## Versioning & releases
+
+Versions follow `MAJOR.MINOR.PATCH`, tracked entirely via git tags (no
+committed version file). Work happens on `dev`; every push there is
+automatically tagged with the next patch build (e.g. `1.1.4-dev`) and
+published to GHCR as `ghcr.io/mscreations/hhq:1.1.4-dev` /
+`ghcr.io/mscreations/hhq:latest-dev`. Promoting `dev` to `main` is a manual
+pull request on GitHub; once merged, an Action tags the next minor release
+(e.g. `1.2.0`), cuts a GitHub Release, publishes
+`ghcr.io/mscreations/hhq:1.2.0` / `:latest`, and opens+merges a PR syncing
+`main` back into `dev` so `dev` picks up the new line. The running version
+and a link to check for updates are shown at the bottom of the parent
+dashboard.
+
+## Development Process
+
+This project was developed with substantial AI assistance (Claude Code).
+All AI-generated changes were reviewed and tested by the maintainer before
+being committed. The automated test suite was written entirely by AI, under
+human review.
 
 ## A note on build verification
 

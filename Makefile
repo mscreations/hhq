@@ -7,6 +7,7 @@ IMAGE        ?= ghcr.io/mscreations/hhq
 TAG          ?= latest
 DOCKERFILE   := deploy/Dockerfile
 COVER_FILE   := coverage.out
+VERSION      ?= dev
 
 HTMX_MIN_AGE_DAYS ?= 90
 
@@ -35,7 +36,7 @@ help:
 	@echo "  clean          Remove build artifacts"
 
 build:
-	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/server
+	go build -ldflags="-X main.Version=$(VERSION)" -o $(BUILD_DIR)/$(BINARY) ./cmd/server
 
 run: build
 	@set -a; [ -f .env ] && . ./.env; set +a; ./$(BUILD_DIR)/$(BINARY)
@@ -66,7 +67,7 @@ tidy:
 # context must be the repo root, not deploy/ - `docker build deploy/` (or
 # `.\deploy\` on Windows) fails because go.mod isn't visible in that context.
 docker-build:
-	docker build -f $(DOCKERFILE) -t $(IMAGE):$(TAG) .
+	docker build --build-arg VERSION=$(VERSION) -f $(DOCKERFILE) -t $(IMAGE):$(TAG) .
 
 docker-run: docker-build
 	docker run --rm -p 8080:8080 --env-file .env $(IMAGE):$(TAG)
