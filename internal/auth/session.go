@@ -68,6 +68,8 @@ func (sm *SessionManager) Logout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   sm.Secure,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 }

@@ -37,7 +37,15 @@ func sanitizeNextPath(next string) string {
 	if len(next) < 1 || next[0] != '/' || (len(next) > 1 && (next[1] == '/' || next[1] == '\\')) {
 		return "/parent"
 	}
-	if u, err := url.Parse(next); err != nil || u.Host != "" || u.Scheme != "" || u.Opaque != "" {
+
+	// Some browsers treat a backslash anywhere in the URL as equivalent to a
+	// forward slash, not just immediately after the leading slash, so
+	// normalize before parsing and confirm no host was smuggled in further
+	// down the string (net/url won't otherwise interpret a bare backslash as
+	// introducing an authority component).
+	normalized := strings.ReplaceAll(next, "\\", "/")
+	target, err := url.Parse(normalized)
+	if err != nil || target.Hostname() != "" || target.Scheme != "" || target.Opaque != "" {
 		return "/parent"
 	}
 	return next
