@@ -9,10 +9,19 @@ name: Publish image to GHCR
 # prevention). Calling this as a reusable workflow sidesteps that entirely,
 # since it's part of the same run rather than a separately-triggered one.
 # The `push: tags:` trigger is kept too, so a manually-pushed version tag
-# (not made by the bot) still publishes on its own.
+# (not made by the bot) still publishes on its own. workflow_dispatch is for
+# manual recovery (e.g. re-publishing a tag whose original automated publish
+# was skipped for some unrelated reason) without needing a personal token
+# scoped for GHCR - `gh workflow run publish.yml -f version=v1.2.3`.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to build and publish, e.g. "v1.2.3" or "v1.2.4-dev"'
+        required: true
+        type: string
   workflow_call:
     inputs:
       version:
