@@ -48,7 +48,9 @@ func sanitizeNextPath(next string) string {
 	if err != nil || target.Hostname() != "" || target.Scheme != "" || target.Opaque != "" {
 		return "/parent"
 	}
-	return next
+	// Redirect using the parsed-and-rebuilt URL (the value actually proven
+	// host-free above) rather than the original raw string.
+	return target.String()
 }
 
 type loginViewData struct {
