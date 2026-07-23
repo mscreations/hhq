@@ -39,6 +39,7 @@ type Plugin struct {
 	CalendarID       sql.NullInt32
 	EncryptedToken   []byte
 	BootstrapManaged bool
+	Version          sql.NullString
 	LastHealthyAt    sql.NullTime
 	LastError        sql.NullString
 	CreatedAt        time.Time
@@ -48,7 +49,7 @@ type PluginStore struct {
 	DB *sql.DB
 }
 
-const pluginColumns = `id, name, base_url, enabled, view_enabled, view_label, view_icon, provides_events, calendar_id, encrypted_token, bootstrap_managed, last_healthy_at, last_error, created_at`
+const pluginColumns = `id, name, base_url, enabled, view_enabled, view_label, view_icon, provides_events, calendar_id, encrypted_token, bootstrap_managed, version, last_healthy_at, last_error, created_at`
 
 func (s *PluginStore) ListAll(ctx context.Context) ([]Plugin, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+pluginColumns+` FROM hhq_plugins ORDER BY name`)
@@ -138,12 +139,12 @@ func (s *PluginStore) SetToken(ctx context.Context, id string, encryptedToken []
 	return err
 }
 
-// UpdateManifest caches the nav/view shape/provides_events flag from a
-// successful GET /manifest fetch (see internal/plugins.FetchManifest).
-func (s *PluginStore) UpdateManifest(ctx context.Context, id string, viewEnabled bool, viewLabel, viewIcon sql.NullString, providesEvents bool) error {
+// UpdateManifest caches the nav/view shape/provides_events flag/version from
+// a successful GET /manifest fetch (see internal/plugins.FetchManifest).
+func (s *PluginStore) UpdateManifest(ctx context.Context, id string, viewEnabled bool, viewLabel, viewIcon sql.NullString, providesEvents bool, version sql.NullString) error {
 	_, err := s.DB.ExecContext(ctx, `
-		UPDATE hhq_plugins SET view_enabled = $2, view_label = $3, view_icon = $4, provides_events = $5
-		WHERE id = $1`, id, viewEnabled, viewLabel, viewIcon, providesEvents)
+		UPDATE hhq_plugins SET view_enabled = $2, view_label = $3, view_icon = $4, provides_events = $5, version = $6
+		WHERE id = $1`, id, viewEnabled, viewLabel, viewIcon, providesEvents, version)
 	return err
 }
 
@@ -182,7 +183,7 @@ func scanPlugins(rows *sql.Rows) ([]Plugin, error) {
 	var out []Plugin
 	for rows.Next() {
 		var p Plugin
-		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ViewEnabled, &p.ViewLabel, &p.ViewIcon, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ViewEnabled, &p.ViewLabel, &p.ViewIcon, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -192,7 +193,7 @@ func scanPlugins(rows *sql.Rows) ([]Plugin, error) {
 
 func scanPlugin(row rowScanner) (*Plugin, error) {
 	var p Plugin
-	if err := row.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ViewEnabled, &p.ViewLabel, &p.ViewIcon, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ViewEnabled, &p.ViewLabel, &p.ViewIcon, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &p, nil

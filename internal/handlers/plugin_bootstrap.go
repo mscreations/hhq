@@ -205,7 +205,8 @@ func (a *App) refreshPluginManifest(ctx context.Context, id, baseURL, token stri
 	}
 
 	viewLabel, viewIcon := nullableViewSpec(manifest)
-	if err := a.Plugins.UpdateManifest(ctx, id, manifest.View.Enabled, viewLabel, viewIcon, manifest.ProvidesEvents); err != nil {
+	version := sql.NullString{String: manifest.Version, Valid: manifest.Version != ""}
+	if err := a.Plugins.UpdateManifest(ctx, id, manifest.View.Enabled, viewLabel, viewIcon, manifest.ProvidesEvents, version); err != nil {
 		logging.Errorf("plugin %q: caching manifest: %v", id, err)
 		return false
 	}
