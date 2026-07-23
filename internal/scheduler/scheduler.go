@@ -15,6 +15,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/report"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
@@ -34,6 +35,7 @@ type Scheduler struct {
 	LoginLimiter     *auth.LoginLimiter
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
+	Release          *release.Cache
 }
 
 // Run blocks forever, dispatching each job on its own ticker. Intended to be
@@ -46,6 +48,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	go s.runWeeklyReport(ctx)
 	go s.runWeatherRefresh(ctx)
 	go s.runPluginSync(ctx)
+	go s.runReleaseCheck(ctx)
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {
@@ -369,6 +372,33 @@ func (s *Scheduler) refreshWeather(ctx context.Context) {
 	}
 	s.Weather.Set(forecast)
 	logging.Debugf("scheduler: weather forecast refreshed (lat=%.4f, lon=%.4f)", lat, lon)
+}
+
+// runReleaseCheck periodically polls GitHub for the latest published release,
+// mirroring runWeatherRefresh's shape (fetch once immediately on startup,
+// then on a ticker) - drives the parent dashboard's "Update Available" badge.
+func (s *Scheduler) runReleaseCheck(ctx context.Context) {
+	s.checkRelease(ctx)
+	ticker := time.NewTicker(s.Cfg.ReleaseCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkRelease(ctx)
+		}
+	}
+}
+
+func (s *Scheduler) checkRelease(ctx context.Context) {
+	latest, err := release.FetchLatest(ctx)
+	if err != nil {
+		logging.Debugf("scheduler: checking for a newer release: %v", err)
+		return
+	}
+	s.Release.Set(latest)
+	logging.Debugf("scheduler: latest known release is %s", latest.Version)
 }
 
 func startOfWeek(t time.Time) time.Time {

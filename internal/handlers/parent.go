@@ -18,6 +18,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
 	"github.com/mscreations/hhq/internal/weather"
 )
@@ -87,6 +88,11 @@ type parentDashboardData struct {
 	// saved (see SetParentDisplayName), so the Parents card can show a brief
 	// confirmation next to that specific row. 0 means "nothing just saved".
 	DisplayNameSavedID int
+	// Version/UpdateAvailable/LatestReleaseURL feed the dashboard footer -
+	// see buildParentDashboardData.
+	Version          string
+	UpdateAvailable  bool
+	LatestReleaseURL string
 }
 
 // childChoreDefGroup pairs a child with their chore definitions, for the
@@ -224,6 +230,8 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		return nil, err
 	}
 
+	updateAvailable, latestReleaseURL := a.checkUpdateAvailable()
+
 	return &parentDashboardData{
 		CurrentUser:           auth.UserFromContext(ctx),
 		AppTitle:              appTitle,
@@ -255,7 +263,29 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		WeeklyReportHour:      weeklyReportHour,
 		Weekdays:              []string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
 		Hours:                 hoursOfDay,
+		Version:               a.Version,
+		UpdateAvailable:       updateAvailable,
+		LatestReleaseURL:      latestReleaseURL,
 	}, nil
+}
+
+// checkUpdateAvailable compares the running version against the latest
+// release the scheduler's background job has cached (see
+// scheduler.runReleaseCheck) and reports whether a newer version is
+// available, plus its release-notes URL. Returns (false, "") if nothing has
+// been fetched yet (e.g. app just started, or GitHub was unreachable).
+func (a *App) checkUpdateAvailable() (bool, string) {
+	if a.Release == nil {
+		return false, ""
+	}
+	latest, ok := a.Release.Get()
+	if !ok {
+		return false, ""
+	}
+	if !release.IsNewer(a.Version, latest.Version) {
+		return false, ""
+	}
+	return true, latest.URL
 }
 
 // hoursOfDay is 0..23, computed once at package init rather than per-request

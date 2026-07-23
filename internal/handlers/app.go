@@ -9,6 +9,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
 )
@@ -17,6 +18,10 @@ import (
 // than via globals — this is the idiomatic Go pattern and makes testing easier.
 type App struct {
 	Cfg *config.Config
+
+	// Version is the running app's version string (stamped at build time via
+	// -ldflags "-X main.Version=..."), shown in the parent dashboard footer.
+	Version string
 
 	Users            *models.UserStore
 	Sessions         *models.SessionStore
@@ -29,6 +34,7 @@ type App struct {
 	Settings         *models.SettingsStore
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
+	Release          *release.Cache
 
 	SessionMgr       *auth.SessionManager
 	Approval         *auth.ApprovalLinkSigner

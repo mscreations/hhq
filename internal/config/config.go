@@ -70,6 +70,7 @@ type Config struct {
 	PublicBaseURL          string        // e.g. https://hhq.example.com - used to build links in emails
 	WeatherRefreshInterval time.Duration // how often to poll Open-Meteo for the configured location
 	PluginSyncInterval     time.Duration // how often to poll registered plugins for synthetic calendar events
+	ReleaseCheckInterval   time.Duration // how often to poll GitHub for a newer release (update-available badge)
 
 	// Google Calendar OAuth2. Both optional - if either is empty, the
 	// "Connect Google Calendar" flow is hidden/disabled rather than the app
@@ -139,6 +140,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid PLUGIN_SYNC_INTERVAL_MINUTES: %w", err)
 	}
 	cfg.PluginSyncInterval = time.Duration(pluginSyncMinutes) * time.Minute
+
+	releaseCheckMinutes, err := strconv.Atoi(getEnvDefault("RELEASE_CHECK_INTERVAL_MINUTES", "1440"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid RELEASE_CHECK_INTERVAL_MINUTES: %w", err)
+	}
+	cfg.ReleaseCheckInterval = time.Duration(releaseCheckMinutes) * time.Minute
 
 	cfg.SessionLifetime = 14 * 24 * time.Hour // parent sessions last 2 weeks by default
 	cfg.ApprovalLinkTTL = 7 * 24 * time.Hour  // approval links good for a week

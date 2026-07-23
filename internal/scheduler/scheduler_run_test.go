@@ -14,6 +14,7 @@ import (
 	"github.com/mscreations/hhq/internal/auth"
 	"github.com/mscreations/hhq/internal/config"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/testutil"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
@@ -426,7 +427,7 @@ func TestRunLaunchesAllFourJobsAndStopsOnCancel(t *testing.T) {
 	}
 
 	s := &Scheduler{
-		Cfg:              &config.Config{CalendarSyncInterval: time.Hour, CalendarWindowDays: 7, WeeklyReportWeekday: time.Sunday, WeeklyReportHour: 20, WeatherRefreshInterval: time.Hour, PluginSyncInterval: time.Hour},
+		Cfg:              &config.Config{CalendarSyncInterval: time.Hour, CalendarWindowDays: 7, WeeklyReportWeekday: time.Sunday, WeeklyReportHour: 20, WeatherRefreshInterval: time.Hour, PluginSyncInterval: time.Hour, ReleaseCheckInterval: time.Hour},
 		CalendarAccounts: accounts,
 		Calendars:        &models.CalendarStore{DB: conn},
 		Events:           &models.EventStore{DB: conn},
@@ -438,6 +439,7 @@ func TestRunLaunchesAllFourJobsAndStopsOnCancel(t *testing.T) {
 		LoginLimiter:     auth.NewLoginLimiter(10, 15*time.Minute),
 		Weather:          &weather.Cache{},
 		Plugins:          &models.PluginStore{DB: conn},
+		Release:          &release.Cache{},
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())

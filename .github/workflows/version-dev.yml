@@ -1,0 +1,40 @@
+name: Version dev build
+
+# Tags every push to dev with the next patch version for the currently
+# promoted major.minor line (e.g. v1.2.4-dev), then calls publish.yml
+# directly as a reusable workflow (not via publish.yml's own `push: tags:`
+# trigger - a tag pushed with the default GITHUB_TOKEN, as this job does,
+# does not fire other workflows' triggers, so chaining through a normal tag
+# push wouldn't work here). See version-main.yml for how major.minor gets
+# promoted, and README.md's versioning section for the overall scheme.
+on:
+  push:
+    branches: [dev]
+
+concurrency:
+  group: version-dev
+  cancel-in-progress: false
+
+jobs:
+  tag-dev-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/compute-next-dev-tag
+        id: tag
+
+  publish:
+    needs: tag-dev-version
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      version: ${{ needs.tag-dev-version.outputs.tag }}
