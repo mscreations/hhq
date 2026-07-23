@@ -17,6 +17,7 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/mscreations/hhq/internal/auth"
@@ -29,7 +30,19 @@ import (
 // "next" (attacker-controllable via a crafted login link) is an open
 // redirect.
 func sanitizeNextPath(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+	if next == "" || !strings.HasPrefix(next, "/") {
+		return "/parent"
+	}
+	// Reject anything a browser could reinterpret as protocol-relative
+	// (host-carrying) rather than a same-origin path: "//host/..." is the
+	// obvious case, but browsers also normalize a leading backslash to a
+	// slash, so "/\host/..." or "/\/host/..." are equally exploitable and
+	// were missed by only checking for "//".
+	rest := strings.TrimLeft(next[1:], "/\\")
+	if len(rest) != len(next[1:]) {
+		return "/parent"
+	}
+	if u, err := url.Parse(next); err != nil || u.Host != "" || u.Scheme != "" || u.Opaque != "" {
 		return "/parent"
 	}
 	return next

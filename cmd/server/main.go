@@ -297,6 +297,9 @@ func main() {
 			From:     cfg.SMTPFrom,
 		},
 	}
+	if !cfg.CookieSecure {
+		logging.Warnf("startup: session cookie is being issued WITHOUT the Secure attribute (PUBLIC_BASE_URL is not https:// and COOKIE_SECURE was not set to true) - the session cookie can be read by anyone on the network path. Set PUBLIC_BASE_URL to an https:// URL or COOKIE_SECURE=true unless this is a trusted local-only deployment.")
+	}
 	app.SessionMgr = &auth.SessionManager{
 		Sessions: app.Sessions,
 		Users:    app.Users,
