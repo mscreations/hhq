@@ -610,7 +610,7 @@ func TestRunPluginSyncTicksRepeatedly(t *testing.T) {
 	if err := pluginStore.SetToken(ctx, "ticker-plugin", encryptedToken); err != nil {
 		t.Fatalf("Plugins.SetToken: %v", err)
 	}
-	if err := pluginStore.UpdateManifest(ctx, "ticker-plugin", false, sql.NullString{}, sql.NullString{}, true); err != nil {
+	if err := pluginStore.UpdateManifest(ctx, "ticker-plugin", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := pluginStore.SetCalendarID(ctx, "ticker-plugin", calendarID); err != nil {
@@ -720,7 +720,7 @@ func TestSyncAllPluginsLogsErrorWhenSyncOneFails(t *testing.T) {
 	if err := pluginStore.SetToken(ctx, "broken-plugin", []byte("not-valid-ciphertext")); err != nil {
 		t.Fatalf("Plugins.SetToken: %v", err)
 	}
-	if err := pluginStore.UpdateManifest(ctx, "broken-plugin", false, sql.NullString{}, sql.NullString{}, true); err != nil {
+	if err := pluginStore.UpdateManifest(ctx, "broken-plugin", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := pluginStore.SetCalendarID(ctx, "broken-plugin", calendarID); err != nil {

@@ -128,7 +128,7 @@ func TestPluginStoreListEnabledFiltersOnEnabledProvidesEventsAndCalendarID(t *te
 	if err := s.Create(ctx, Plugin{ID: "ready", Name: "Ready Plugin", BaseURL: "http://x:1", Enabled: true}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "ready", false, sql.NullString{}, sql.NullString{}, true); err != nil {
+	if err := s.UpdateManifest(ctx, "ready", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := s.SetCalendarID(ctx, "ready", calID); err != nil {
@@ -138,7 +138,7 @@ func TestPluginStoreListEnabledFiltersOnEnabledProvidesEventsAndCalendarID(t *te
 	if err := s.Create(ctx, Plugin{ID: "disabled", Name: "Disabled Plugin", BaseURL: "http://x:2", Enabled: false}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "disabled", false, sql.NullString{}, sql.NullString{}, true); err != nil {
+	if err := s.UpdateManifest(ctx, "disabled", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := s.SetCalendarID(ctx, "disabled", calID); err != nil {
@@ -167,7 +167,7 @@ func TestPluginStoreListViewsFiltersOnEnabledAndViewEnabled(t *testing.T) {
 	if err := s.Create(ctx, Plugin{ID: "viewable", Name: "Viewable Plugin", BaseURL: "http://x:1", Enabled: true}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "viewable", true, sql.NullString{String: "Bills", Valid: true}, sql.NullString{String: "dollar", Valid: true}, false); err != nil {
+	if err := s.UpdateManifest(ctx, "viewable", true, sql.NullString{String: "Bills", Valid: true}, sql.NullString{String: "dollar", Valid: true}, false, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 

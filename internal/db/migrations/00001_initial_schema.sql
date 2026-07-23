@@ -183,6 +183,11 @@ CREATE TABLE hhq_plugins (
     -- since there's no manual "add a plugin" UI yet, but mirrors the same
     -- BootstrapManaged convention used elsewhere in this schema.
     bootstrap_managed   BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Cached from the plugin's last successful GET /manifest fetch - the
+    -- plugin's own build version, shown on the parent dashboard's Plugins
+    -- card so a parent can see what's actually running without shelling
+    -- into the container.
+    version             TEXT,
     last_healthy_at     TIMESTAMPTZ,
     last_error          TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()

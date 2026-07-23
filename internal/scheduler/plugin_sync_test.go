@@ -97,7 +97,7 @@ func TestSyncAllPluginsUpsertsAndPrunesEvents(t *testing.T) {
 	if err := pluginStore.SetToken(ctx, "bill-tracker", encryptedToken); err != nil {
 		t.Fatalf("Plugins.SetToken: %v", err)
 	}
-	if err := pluginStore.UpdateManifest(ctx, "bill-tracker", false, sql.NullString{}, sql.NullString{}, true); err != nil {
+	if err := pluginStore.UpdateManifest(ctx, "bill-tracker", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := pluginStore.SetCalendarID(ctx, "bill-tracker", calendarID); err != nil {
