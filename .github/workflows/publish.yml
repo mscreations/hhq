@@ -72,6 +72,11 @@ jobs:
           context: .
           file: deploy/Dockerfile
           push: true
+          # Buildx generates a provenance attestation by default, pushed as
+          # a second, untagged manifest alongside the real image inside an
+          # OCI index. Disabled since it just clutters the GHCR package
+          # list with untagged entries for no benefit here.
+          provenance: false
           build-args: |
             VERSION=${{ steps.vars.outputs.version }}
           tags: |
