@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Jon Shaulis
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // Package email sends notification emails (chore approval requests, weekly
 // reports) via SMTP using credentials mounted from a Kubernetes Secret.
 package email
@@ -16,6 +31,19 @@ import (
 
 	"github.com/mscreations/hhq/internal/logging"
 )
+
+// stripCRLF removes carriage-return and line-feed characters from a value
+// that will be embedded in a MIME header (From/To/Subject/Content-Type/
+// Content-Disposition). Every one of these values ultimately traces back to
+// data a parent can set through the dashboard (app_title, a child/parent's
+// display name via the chore-approval subject line, an attachment filename)
+// - without this, a value containing "\r\n" could inject arbitrary extra
+// headers or start a new MIME part, i.e. email header/content injection.
+func stripCRLF(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	return s
+}
 
 // displayFrom formats the message's From: header. s.From (the SMTP_FROM env
 // var) must stay a bare address for the SMTP envelope MAIL FROM - Fastmail
@@ -122,9 +150,14 @@ func buildMIMEMessage(from string, to []string, subject, htmlBody string, attach
 	var buf bytes.Buffer
 	boundary := fmt.Sprintf("hhq-%d", time.Now().UnixNano())
 
-	fmt.Fprintf(&buf, "From: %s\r\n", from)
-	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(to, ", "))
-	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("UTF-8", subject))
+	sanitizedTo := make([]string, len(to))
+	for i, addr := range to {
+		sanitizedTo[i] = stripCRLF(addr)
+	}
+
+	fmt.Fprintf(&buf, "From: %s\r\n", stripCRLF(from))
+	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(sanitizedTo, ", "))
+	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("UTF-8", stripCRLF(subject)))
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	fmt.Fprintf(&buf, "Content-Type: multipart/mixed; boundary=%q\r\n\r\n", boundary)
 
@@ -134,10 +167,12 @@ func buildMIMEMessage(from string, to []string, subject, htmlBody string, attach
 	buf.WriteString("\r\n")
 
 	for _, a := range attachments {
+		filename := stripCRLF(a.Filename)
+		contentType := stripCRLF(a.ContentType)
 		fmt.Fprintf(&buf, "--%s\r\n", boundary)
-		fmt.Fprintf(&buf, "Content-Type: %s; name=%q\r\n", a.ContentType, a.Filename)
+		fmt.Fprintf(&buf, "Content-Type: %s; name=%q\r\n", contentType, filename)
 		buf.WriteString("Content-Transfer-Encoding: base64\r\n")
-		fmt.Fprintf(&buf, "Content-Disposition: attachment; filename=%q\r\n\r\n", a.Filename)
+		fmt.Fprintf(&buf, "Content-Disposition: attachment; filename=%q\r\n\r\n", filename)
 		buf.WriteString(base64Chunked(a.Data))
 		buf.WriteString("\r\n")
 	}

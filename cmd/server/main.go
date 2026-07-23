@@ -1,3 +1,18 @@
+// Copyright (C) 2026 Jon Shaulis
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 // Command server is the HappyHome Quest application entrypoint.
 package main
 
@@ -281,6 +296,9 @@ func main() {
 			StartTLS: cfg.SMTPStartTLS,
 			From:     cfg.SMTPFrom,
 		},
+	}
+	if !cfg.CookieSecure {
+		logging.Warnf("startup: session cookie is being issued WITHOUT the Secure attribute (PUBLIC_BASE_URL is not https:// and COOKIE_SECURE was not set to true) - the session cookie can be read by anyone on the network path. Set PUBLIC_BASE_URL to an https:// URL or COOKIE_SECURE=true unless this is a trusted local-only deployment.")
 	}
 	app.SessionMgr = &auth.SessionManager{
 		Sessions: app.Sessions,

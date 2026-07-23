@@ -1,7 +1,23 @@
+// Copyright (C) 2026 Jon Shaulis
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 package handlers
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/mscreations/hhq/internal/auth"
@@ -14,7 +30,14 @@ import (
 // "next" (attacker-controllable via a crafted login link) is an open
 // redirect.
 func sanitizeNextPath(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+	// Require a leading "/" (same-site path), and reject a second character
+	// of "/" or "\" - browsers treat both "//host/..." and "/\host/..." as
+	// protocol-relative absolute URLs, so checking only the first character
+	// is not enough to prevent an open redirect.
+	if len(next) < 1 || next[0] != '/' || (len(next) > 1 && (next[1] == '/' || next[1] == '\\')) {
+		return "/parent"
+	}
+	if u, err := url.Parse(next); err != nil || u.Host != "" || u.Scheme != "" || u.Opaque != "" {
 		return "/parent"
 	}
 	return next
