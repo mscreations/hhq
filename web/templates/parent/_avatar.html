@@ -1,0 +1,51 @@
+{{/* Shared avatar cell + modal, used by both "parent/_children" and
+     "parent/_parents" - takes a dict with "User" (a models.User),
+     "CardTarget" (the hx-target/hx-swap id of the enclosing card, e.g.
+     "children-card"), and "CSRFToken". Factored out so upload/remove markup
+     (and the CSRF-in-query-param quirk noted below) only has to be right in
+     one place. */}}
+{{define "parent/_avatar_field"}}
+<button type="button" class="avatar-button" title="Change Avatar" aria-label="Change {{.User.Name}}'s avatar" onclick="openAvatarModal({{.User.ID}})">
+  {{if .User.AvatarURL}}
+  <img class="avatar-thumb" src="{{.User.AvatarURL}}" alt="{{.User.Name}}'s avatar">
+  {{else}}
+  <img class="avatar-thumb" src="/static/img/default-avatar.svg" alt="{{.User.Name}} (no avatar set)">
+  {{end}}
+</button>
+{{end}}
+
+{{define "parent/_avatar_modal"}}
+<div id="avatar-modal-overlay-{{.User.ID}}" class="modal-overlay avatar-modal-overlay" hidden
+     onclick="if (event.target === this) closeAvatarModal({{.User.ID}})">
+  <div class="modal">
+    <button class="modal-close" type="button" onclick="closeAvatarModal({{.User.ID}})" aria-label="Close">&times;</button>
+    <section class="card">
+      <h2>{{.User.Name}}'s Avatar</h2>
+      <div class="avatar-modal-preview">
+        {{if .User.AvatarURL}}
+        <img class="avatar-preview" src="{{.User.AvatarURL}}" alt="{{.User.Name}}'s avatar">
+        {{else}}
+        <img class="avatar-preview" src="/static/img/default-avatar.svg" alt="No avatar set">
+        {{end}}
+      </div>
+      <!-- CSRF token is sent as a query param, not a form field: the CSRF
+           middleware only calls r.ParseForm() (which parses the URL query
+           but not a multipart body), so a csrf_token field inside this
+           multipart form would never actually be seen by the check. -->
+      <form method="POST" action="/parent/users/{{.User.ID}}/avatar?csrf_token={{.CSRFToken}}"
+            hx-post="/parent/users/{{.User.ID}}/avatar?csrf_token={{.CSRFToken}}" hx-target="#{{.CardTarget}}" hx-swap="outerHTML"
+            hx-encoding="multipart/form-data" enctype="multipart/form-data" class="inline-form">
+        <input type="file" name="avatar" accept="image/*" required>
+        <button type="submit">Upload</button>
+      </form>
+      {{if .User.AvatarURL}}
+      <form method="POST" action="/parent/users/{{.User.ID}}/avatar/remove"
+            hx-post="/parent/users/{{.User.ID}}/avatar/remove" hx-target="#{{.CardTarget}}" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-reject">Remove avatar</button>
+      </form>
+      {{end}}
+    </section>
+  </div>
+</div>
+{{end}}

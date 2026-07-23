@@ -1,0 +1,311 @@
+:root {
+  --bg: #f7f8fa;
+  --card-bg: #ffffff;
+  --border: #e2e5e9;
+  --text: #1c1f24;
+  --text-dim: #6b7280;
+  --accent: #3B82F6;
+  --green: #22c55e;
+  --red: #ef4444;
+}
+
+/* Dark mode: toggled by adding data-theme="dark" to <html> (see parent.js).
+   Also respects the OS-level preference on first visit, before any manual
+   choice has been saved. */
+html[data-theme="dark"] {
+  --bg: #14171c;
+  --card-bg: #1b1f26;
+  --border: #2a2f38;
+  --text: #f0f2f5;
+  --text-dim: #9aa3af;
+  --accent: #5b9bf6;
+  --green: #34d399;
+  --red: #f87171;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #14171c;
+    --card-bg: #1b1f26;
+    --border: #2a2f38;
+    --text: #f0f2f5;
+    --text-dim: #9aa3af;
+    --accent: #5b9bf6;
+    --green: #34d399;
+    --red: #f87171;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.login-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  position: relative;
+}
+
+.login-card {
+  background: var(--card-bg);
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-card h1 { margin: 0; font-size: 22px; }
+.login-card .subtitle { margin: 0 0 10px 0; color: var(--text-dim); }
+.login-card label { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--text-dim); }
+.login-card input { padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
+.login-card button, .dashboard-grid button {
+  background: var(--accent); color: white; border: none; padding: 10px 16px;
+  border-radius: 8px; font-size: 15px; cursor: pointer;
+}
+.error { color: var(--red); font-size: 14px; }
+
+/* Brief confirmation shown next to a just-saved inline form field (see
+   web/templates/parent/_parents.html's display-name form) - fades out on
+   its own via animation-fill-mode rather than needing JS to remove it. */
+.saved-badge {
+  color: var(--green); font-size: 13px; margin-left: 8px;
+  animation: saved-badge-fade 2.5s ease-in forwards;
+}
+@keyframes saved-badge-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.topbar {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 16px 32px; background: var(--card-bg); border-bottom: 1px solid var(--border);
+}
+.topbar h1 { font-size: 18px; margin: 0; }
+.topbar nav a { margin-left: 20px; color: var(--accent); text-decoration: none; font-size: 14px; }
+
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  padding: 24px 32px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.card-wide { grid-column: 1 / -1; }
+.card h2 { margin-top: 0; font-size: 16px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+
+table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 14px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--border); }
+th { color: var(--text-dim); font-weight: 600; }
+
+.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+
+.avatar-thumb { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; vertical-align: middle; margin-right: 6px; }
+
+.avatar-button {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  border-radius: 50%;
+  line-height: 0;
+  cursor: pointer;
+}
+.avatar-button .avatar-thumb { margin-right: 0; transition: opacity 0.15s; }
+.avatar-button:hover .avatar-thumb, .avatar-button:focus-visible .avatar-thumb { opacity: 0.75; }
+.avatar-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.avatar-modal-preview { display: flex; justify-content: center; margin-bottom: 16px; }
+.avatar-preview { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; }
+
+.color-picker-form { display: flex; align-items: center; gap: 4px; }
+.color-picker-form select { padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg); color: var(--text); }
+
+.inline-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline-form input, .inline-form select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.days-picker label { font-size: 12px; margin-right: 6px; color: var(--text-dim); }
+
+/* Labeled field wrapper (e.g. the "Add Chore" form's Points input) - a
+   plain placeholder isn't enough when the field also carries a default
+   value, since the value hides the placeholder text. */
+.field-label { display: inline-flex; align-items: center; gap: 6px; }
+.field-label label { font-size: 12px; color: var(--text-dim); }
+.field-label input { width: 70px; }
+
+/* Inputs/selects don't inherit theme colors by default in most browsers -
+   set them explicitly so text stays readable in dark mode too. */
+input, select, button, textarea {
+  color: var(--text);
+  background: var(--card-bg);
+}
+input, select, textarea { border: 1px solid var(--border); }
+
+.edit-form { display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
+.edit-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text-dim); }
+.edit-form input { padding: 8px 10px; border-radius: 6px; }
+.checkbox-label { flex-direction: row !important; align-items: center; gap: 8px !important; }
+.edit-actions { margin-top: 8px; }
+.edit-actions button { background: var(--accent); color: white; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; }
+.delete-form { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  margin-left: 20px;
+}
+.theme-toggle:hover { color: var(--text); }
+
+.login-theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+}
+
+.btn-approve { background: var(--green); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+.btn-reject { background: var(--red); color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+
+.hint { color: var(--text-dim); font-size: 12px; margin-top: 8px; }
+.empty { color: var(--text-dim); }
+
+.account-block {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.account-block > .account-header-main {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.account-block[open] > .account-header-main { margin-bottom: 4px; }
+.account-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.provider-badge {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.collapsible-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+}
+.collapsible-group > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+.collapsible-group[open] > summary {
+  margin-bottom: 8px;
+}
+
+.calendars-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 0; }
+.calendars-table th, .calendars-table td { padding: 6px; border-bottom: 1px solid var(--border); }
+
+.toggle-btn {
+  border: none;
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toggle-on { background: var(--green); color: white; }
+.toggle-off { background: var(--border); color: var(--text-dim); }
+
+.btn-secondary {
+  background: none;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.add-account-form { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+
+.btn-resync[disabled] {
+  opacity: 0.75;
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spinner-rotate 0.6s linear infinite;
+  vertical-align: middle;
+}
+
+@keyframes spinner-rotate {
+  to { transform: rotate(360deg); }
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-overlay[hidden] { display: none; }
+.modal {
+  position: relative;
+  width: 90%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: none;
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }

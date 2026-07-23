@@ -1,0 +1,22 @@
+{{define "kiosk/_calendar"}}
+{{if .DayGroups}}
+{{range .DayGroups}}
+<div class="day-group">
+  <h3 class="day-heading">{{.Label}}</h3>
+  <ul class="event-list">
+    {{range .Events}}
+    <li class="event-item" style="border-left-color: {{.CalendarColor}}" title="{{.AccountName}}/{{.CalendarName}}"
+        hx-get="/kiosk/events/{{.ID}}" hx-target="#event-modal-body" hx-swap="innerHTML"
+        hx-on::before-request="document.getElementById('event-modal').classList.add('open')">
+      <span class="event-time">{{if .AllDay}}All day{{else}}{{.StartsAt.Format "3:04 PM"}}{{end}}</span>
+      <span class="event-summary">{{.Summary}}</span>
+      <span class="event-account-dot" style="background:{{.CalendarColor}}"></span>
+    </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+{{else}}
+<p class="empty-state">No upcoming events.</p>
+{{end}}
+{{end}}

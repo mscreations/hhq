@@ -1,0 +1,18 @@
+{{define "kiosk/_home"}}
+<div class="kiosk-grid">
+  <section class="panel panel-agenda panel-span-4">
+    <h2>Today's Agenda</h2>
+    <div id="agenda-content" hx-get="/kiosk/fragments/agenda" hx-trigger="every 60s, eventActionDone from:body" hx-swap="innerHTML">{{template "kiosk/_agenda" .}}</div>
+  </section>
+
+  <section class="panel panel-calendar panel-span-4">
+    <h2>Upcoming</h2>
+    <div id="calendar-content" hx-get="/kiosk/fragments/calendar" hx-trigger="every 60s, eventActionDone from:body" hx-swap="innerHTML">{{template "kiosk/_calendar" .}}</div>
+  </section>
+
+  <section class="panel panel-chores panel-span-4">
+    <h2>Chores</h2>
+    <div id="chores-content" hx-get="/kiosk/fragments/chores" hx-trigger="every 60s" hx-swap="innerHTML">{{template "kiosk/_chores" .}}</div>
+  </section>
+</div>
+{{end}}

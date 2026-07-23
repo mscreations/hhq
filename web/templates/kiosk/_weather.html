@@ -1,0 +1,7 @@
+{{define "kiosk/_weather"}}
+{{if .Available}}
+{{template "kiosk/_weather_icon" .Icon}}<span class="weather-temp">{{printf "%.0f" .CurrentTemp}}&deg;</span>
+{{else}}
+<span class="weather-unavailable">--</span>
+{{end}}
+{{end}}

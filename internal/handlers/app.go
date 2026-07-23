@@ -1,0 +1,61 @@
+package handlers
+
+import (
+	"context"
+	"html/template"
+
+	"github.com/mscreations/hhq/internal/auth"
+	"github.com/mscreations/hhq/internal/config"
+	"github.com/mscreations/hhq/internal/email"
+	"github.com/mscreations/hhq/internal/logging"
+	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/util"
+	"github.com/mscreations/hhq/internal/weather"
+)
+
+// App bundles every dependency handlers need. Passed around explicitly rather
+// than via globals — this is the idiomatic Go pattern and makes testing easier.
+type App struct {
+	Cfg *config.Config
+
+	Users            *models.UserStore
+	Sessions         *models.SessionStore
+	CalendarAccounts *models.CalendarAccountStore
+	Calendars        *models.CalendarStore
+	Events           *models.EventStore
+	Chores           *models.ChoreStore
+	ChoreDefs        *models.ChoreDefinitionStore
+	ChoreInstances   *models.ChoreInstanceStore
+	Settings         *models.SettingsStore
+	Weather          *weather.Cache
+	Plugins          *models.PluginStore
+
+	SessionMgr       *auth.SessionManager
+	Approval         *auth.ApprovalLinkSigner
+	Invite           *auth.ApprovalLinkSigner
+	PasswordReset    *auth.ApprovalLinkSigner
+	GoogleOAuthState *auth.ApprovalLinkSigner
+	CSRF             *auth.CSRFManager
+	LoginLimiter     *auth.LoginLimiter
+	Encryptor        *util.Encryptor
+	Mailer           *email.Sender
+
+	Templates *template.Template
+
+	// syncing tracks calendar accounts with an in-progress background
+	// sync (see syncAccountAsync in sync.go), so the dashboard can show a
+	// "Resync Now" button as busy and self-poll until it completes. Zero
+	// value is ready to use.
+	syncing syncStatus
+}
+
+// appTitle returns the parent-editable app_title setting, falling back to the
+// configured default if the setting can't be read.
+func (a *App) appTitle(ctx context.Context) string {
+	title, err := a.Settings.Get(ctx, "app_title", a.Cfg.AppTitle)
+	if err != nil {
+		logging.Errorf("appTitle: loading app_title setting: %v", err)
+		return a.Cfg.AppTitle
+	}
+	return title
+}

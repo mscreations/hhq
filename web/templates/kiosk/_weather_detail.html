@@ -1,0 +1,52 @@
+{{define "kiosk/_weather_detail"}}
+{{if .Available}}
+<div class="weather-detail">
+  <div class="weather-detail-current">
+    {{template "kiosk/_weather_icon" .Icon}}
+    <div>
+      <div class="weather-detail-temp">{{printf "%.0f" .CurrentTemp}}&deg;</div>
+      <div class="weather-detail-desc">{{.Description}}</div>
+    </div>
+  </div>
+
+  {{if .Hourly}}
+  <h4>Next Hours</h4>
+  <div class="weather-hourly">
+    {{range .Hourly}}
+    <div class="weather-hourly-item">
+      <div class="weather-hourly-label">{{.Label}}</div>
+      {{template "kiosk/_weather_icon" .Icon}}
+      <div class="weather-hourly-temp">{{printf "%.0f" .Temp}}&deg;</div>
+      <div class="weather-hourly-precip">{{.PrecipProbability}}%</div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .Daily}}
+  <h4>7-Day Forecast</h4>
+  <div class="weather-daily">
+    {{range .Daily}}
+    <div class="weather-daily-row">
+      <div class="weather-daily-label">{{.Label}}</div>
+      {{template "kiosk/_weather_icon" .Icon}}
+      <div class="weather-daily-precip">{{.PrecipProbability}}%</div>
+      <div class="weather-daily-temps"><strong>{{printf "%.0f" .TempMax}}&deg;</strong> / {{printf "%.0f" .TempMin}}&deg;</div>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .RadarEmbedURL}}
+  <h4>Radar</h4>
+  <div class="weather-radar">
+    <iframe src="{{.RadarEmbedURL}}" loading="lazy" title="Radar map" allowfullscreen></iframe>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<div class="weather-detail weather-detail-empty">
+  No weather location configured yet. Set one from the parent dashboard's Settings card.
+</div>
+{{end}}
+{{end}}

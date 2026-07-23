@@ -1,0 +1,42 @@
+{{define "parent/_pending_approvals"}}
+<section class="card card-wide" id="pending-approvals-card">
+  <h2>Pending Chore Approvals</h2>
+  {{if .PendingApprovals}}
+  <table>
+    <tr><th>Child</th><th>Chore</th><th>Due</th><th>Points</th><th></th></tr>
+    {{range .PendingApprovals}}
+    <tr>
+      <td>
+        {{$avatarURL := index $.ChildAvatarByID .ChildID}}
+        {{if $avatarURL}}
+        <img class="avatar-thumb" src="{{$avatarURL}}" alt="">
+        {{else}}
+        <img class="avatar-thumb" src="/static/img/default-avatar.svg" alt="">
+        {{end}}
+        {{.ChildName}}
+      </td>
+      <td>{{.ChoreName}}</td>
+      <td>{{.DueDate.Format "Jan 2"}}</td>
+      <td>{{.Points}}</td>
+      <td class="actions">
+        <form method="POST" action="/parent/chores/{{.ID}}/decide" style="display:inline"
+              hx-post="/parent/chores/{{.ID}}/decide" hx-target="#pending-approvals-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="decision" value="approve">
+          <button type="submit" class="btn-approve">Approve</button>
+        </form>
+        <form method="POST" action="/parent/chores/{{.ID}}/decide" style="display:inline"
+              hx-post="/parent/chores/{{.ID}}/decide" hx-target="#pending-approvals-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="decision" value="reject">
+          <button type="submit" class="btn-reject">Reject</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="empty">No chores awaiting approval. (You can also approve/reject right from the email you receive.)</p>
+  {{end}}
+</section>
+{{end}}

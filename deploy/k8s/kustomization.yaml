@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hhq
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret-example.yaml # replace with your real secrets before applying, or exclude and manage secrets separately (Sealed Secrets, External Secrets, SOPS, etc.)
+  - deployment.yaml
+  - service.yaml
+  - ingressroute.yaml

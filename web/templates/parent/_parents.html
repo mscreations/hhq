@@ -1,0 +1,60 @@
+{{define "parent/_parents"}}
+<section class="card" id="parents-card">
+  <h2>Parents</h2>
+  {{if .InviteError}}<p class="error">{{.InviteError}}</p>{{end}}
+  <table>
+    <tr><th>Avatar</th><th>Name</th><th>Kiosk Display Name</th><th>Email</th><th>Status</th><th></th></tr>
+    {{range .Parents}}
+    <tr>
+      <td>
+        {{template "parent/_avatar_field" (dict "User" . "CardTarget" "parents-card" "CSRFToken" $.CSRFToken)}}
+      </td>
+      <td>{{.Name}}</td>
+      <td>
+        <form method="POST" action="/parent/users/{{.ID}}/display-name" class="inline-form" style="display:inline"
+              hx-post="/parent/users/{{.ID}}/display-name" hx-target="#parents-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="text" name="display_name" value="{{.DisplayName.String}}" placeholder="{{.Name}}">
+          <button type="submit" class="btn-secondary">Save</button>
+          {{if eq .ID $.DisplayNameSavedID}}<span class="saved-badge">Saved ✓</span>{{end}}
+        </form>
+      </td>
+      <td>{{.Email.String}}</td>
+      <td>
+        {{if .PasswordHash.Valid}}
+          Active
+        {{else}}
+          Pending{{if .InvitedAt.Valid}} since {{.InvitedAt.Time.Format "Jan 2"}}{{end}}
+        {{end}}
+      </td>
+      <td>
+        {{if not .PasswordHash.Valid}}
+        <form method="POST" action="/parent/users/{{.ID}}/resend-invite" style="display:inline"
+              hx-post="/parent/users/{{.ID}}/resend-invite" hx-target="#parents-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn-secondary">Resend Invite</button>
+        </form>
+        {{end}}
+        <form method="POST" action="/parent/users/{{.ID}}/remove" style="display:inline"
+              hx-post="/parent/users/{{.ID}}/remove" hx-target="#parents-card" hx-swap="outerHTML"
+              hx-confirm="Remove {{.Name}}? This cannot be undone from the UI.">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn-reject">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  <form method="POST" action="/parent/users/parents" class="inline-form"
+        hx-post="/parent/users/parents" hx-target="#parents-card" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="text" name="name" placeholder="Name" required>
+    <input type="email" name="email" placeholder="Email" required>
+    <button type="submit">Send Invite</button>
+  </form>
+  <p class="hint">All parents listed here receive chore-approval emails. New parents are invited by email and set their own password. Kiosk Display Name (e.g. "Mom"/"Dad") is shown on the chore tracker in place of the real name; leave blank to show the real name.</p>
+</section>
+{{range .Parents}}
+{{template "parent/_avatar_modal" (dict "User" . "CardTarget" "parents-card" "CSRFToken" $.CSRFToken)}}
+{{end}}
+{{end}}

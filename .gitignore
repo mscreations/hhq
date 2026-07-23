@@ -1,0 +1,12 @@
+/hhq
+/bin/
+*.log
+.env*
+.DS_Store
+*.exe
+__debug_bin*
+.vscode/
+coverage.out
+coverage.html
+.config
+CLAUDE.md

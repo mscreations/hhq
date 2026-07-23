@@ -1,0 +1,66 @@
+{{define "parent/calendar_account_edit"}}
+<!DOCTYPE html>
+<html lang="en">
+{{template "parent/_head" (dict "PageTitle" "Edit Calendar Account" "AppTitle" .AppTitle)}}
+<body>
+  <header class="topbar">
+    <h1>Edit Calendar Account</h1>
+    <nav>
+      <a href="/parent">Back to Dashboard</a>
+      <button id="theme-toggle-btn" class="theme-toggle" onclick="toggleTheme()">Dark Mode</button>
+    </nav>
+  </header>
+  <main class="dashboard-grid">
+    <section class="card card-wide">
+      <form method="POST" action="/parent/calendar-accounts/{{.Account.ID}}" class="edit-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{if eq .Account.Provider "google"}}
+        <label>Provider
+          <input type="text" value="Google Calendar" disabled>
+        </label>
+        <p>Connected as <strong>{{.Account.GoogleEmail.String}}</strong></p>
+        <p><a href="/parent/calendar-accounts/google/connect?reconnect_id={{.Account.ID}}" class="btn-secondary">Reconnect</a></p>
+        <label>Label
+          <input type="text" name="name" value="{{.Account.Name}}" required>
+        </label>
+        <div class="edit-actions">
+          <button type="submit">Save Changes</button>
+        </div>
+        {{else}}
+        <label>Label
+          <input type="text" name="name" value="{{.Account.Name}}" required>
+        </label>
+        <label>Provider
+          <input type="text" value="{{.Account.Provider}}" disabled>
+          <span class="hint">Provider can't be changed after creation - delete and re-add if you need to switch it.</span>
+        </label>
+        <label>CalDAV URL
+          <input type="text" name="caldav_url" value="{{.Account.CalDAVURL.String}}">
+        </label>
+        <label>Username / email
+          <input type="text" name="username" value="{{.Account.Username.String}}" required>
+        </label>
+        <label>App-specific password
+          <input type="password" name="password" placeholder="Leave blank to keep the current password">
+        </label>
+        <div class="edit-actions">
+          <button type="submit">Save Changes</button>
+        </div>
+        {{end}}
+      </form>
+
+      <p class="hint">To enable/disable individual calendars under this account, or to see the colors auto-assigned to each one, go back to the dashboard - saving this form also triggers a fresh calendar discovery.</p>
+
+      <form method="POST" action="/parent/calendar-accounts/{{.Account.ID}}/delete"
+            onsubmit="return confirm('Remove {{.Account.Name}}? This also deletes its calendars and cached events.');"
+            class="delete-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button type="submit" class="btn-reject">Delete This Account</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/js/parent.js"></script>
+</body>
+</html>
+{{end}}

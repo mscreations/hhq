@@ -1,0 +1,21 @@
+# Non-secret configuration. Anything sensitive (DB creds, SMTP creds, signing
+# keys) lives in Secrets instead - see secret-example.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hhq-config
+  namespace: hhq
+data:
+  LISTEN_ADDR: ":8080"
+  LOG_LEVEL: "info" # set to "debug" for verbose troubleshooting logs (calendar sync detail, email send attempts, per-request logging, etc.)
+  DB_PORT: "5432"
+  DB_SSLMODE: "disable" # CNPG typically handles TLS internally to the cluster; adjust if your cluster requires "require"/"verify-full"
+  CALENDAR_SYNC_INTERVAL_MINUTES: "15"
+  CALENDAR_WINDOW_DAYS: "7"
+  SMTP_PORT: "587"
+  SMTP_USE_TLS: "false"
+  SMTP_STARTTLS: "true"
+  SMTP_FROM: "hhq@example.com"
+  # Set this to the externally-reachable URL Traefik exposes this app on -
+  # used to build the approve/reject links in parent notification emails.
+  PUBLIC_BASE_URL: "https://hhq.example.com"

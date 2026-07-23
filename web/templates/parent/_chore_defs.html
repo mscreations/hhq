@@ -1,0 +1,154 @@
+{{define "parent/_chore_defs"}}
+<section class="card card-wide" id="chores-card">
+  {{template "parent/_chore_defs_inner" .}}
+</section>
+{{end}}
+
+{{define "parent/_chore_defs_oob"}}
+<section class="card card-wide" id="chores-card" hx-swap-oob="true">
+  {{template "parent/_chore_defs_inner" .}}
+</section>
+{{end}}
+
+{{define "parent/_chore_def_group_rows"}}
+  {{if .Defs}}
+  <table>
+    <tr><th>Name</th><th>Points</th><th>Schedule</th><th></th></tr>
+    {{range .Defs}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>{{if eq (printf "%v" .AssigneeRole) "parent"}}—{{else}}{{.Points}}{{end}}</td>
+      <td>{{if .OneOffDate.Valid}}One-time: {{.OneOffDate.Time.Format "Jan 2"}}{{else}}{{.DaysOfWeekLabel}}{{end}}</td>
+      <td>
+        {{if .BootstrapManaged}}
+        <span class="hint" title="Managed by assignments.json config">Administratively managed</span>
+        {{else}}
+        <form method="POST" action="/parent/chores/definitions/{{.ID}}/deactivate" style="display:inline"
+              hx-post="/parent/chores/definitions/{{.ID}}/deactivate" hx-target="#chores-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn-reject">Remove</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="hint">No chores yet for {{.ChildName}}.</p>
+  {{end}}
+{{end}}
+
+{{define "parent/_chore_defs_inner"}}
+  <h2>Chores</h2>
+  {{range .ChoreDefsByChild}}
+  <details class="collapsible-group">
+    <summary>{{.ChildName}} <span class="hint">({{len .Defs}} chore{{if ne (len .Defs) 1}}s{{end}})</span></summary>
+    {{template "parent/_chore_def_group_rows" (dict "Defs" .Defs "ChildName" .ChildName "CSRFToken" $.CSRFToken)}}
+  </details>
+  {{end}}
+
+  {{range .ChoreDefsByParent}}
+  <details class="collapsible-group">
+    <summary>{{.ChildName}} <span class="hint">(informational only - {{len .Defs}} chore{{if ne (len .Defs) 1}}s{{end}}, no points)</span></summary>
+    {{template "parent/_chore_def_group_rows" (dict "Defs" .Defs "ChildName" .ChildName "CSRFToken" $.CSRFToken)}}
+  </details>
+  {{end}}
+
+  <form method="POST" action="/parent/chores/definitions" class="inline-form"
+        hx-post="/parent/chores/definitions" hx-target="#chores-card" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <select name="child_id" id="chore-assignee-select" required onchange="updateChoreAssigneeFields()">
+      <optgroup label="Children">
+        {{range .Children}}<option value="{{.ID}}" data-role="child">{{.Name}}</option>{{end}}
+      </optgroup>
+      <optgroup label="Parents (informational only, no points)">
+        {{range .Parents}}<option value="{{.ID}}" data-role="parent">{{.Name}}</option>{{end}}
+      </optgroup>
+    </select>
+    <select name="chore_id" id="chore-select" onchange="updateChoreSelection()">
+      <option value="new">+ New chore...</option>
+      {{range .Chores}}<option value="{{.ID}}" data-description="{{.Description.String}}">{{.Name}}</option>{{end}}
+    </select>
+    <input type="text" name="new_chore_name" id="new-chore-name" placeholder="New chore name">
+    <textarea name="description" id="chore-description" placeholder="Expectations for job completion (optional) - shown to the child before they confirm the chore as done" rows="3"></textarea>
+    <span class="field-label" id="chore-points-wrap">
+      <label for="chore-points">Points</label>
+      <input type="number" name="points" id="chore-points" min="1" value="1" required>
+    </span>
+    <select name="kind" id="chore-kind" onchange="updateChoreKindFields()">
+      <option value="recurring">Recurring</option>
+      <option value="one_off">One-time</option>
+    </select>
+    <span class="days-picker" id="chore-days-picker">
+      <label><input type="checkbox" name="days" value="0"> Sun</label>
+      <label><input type="checkbox" name="days" value="1"> Mon</label>
+      <label><input type="checkbox" name="days" value="2"> Tue</label>
+      <label><input type="checkbox" name="days" value="3"> Wed</label>
+      <label><input type="checkbox" name="days" value="4"> Thu</label>
+      <label><input type="checkbox" name="days" value="5"> Fri</label>
+      <label><input type="checkbox" name="days" value="6"> Sat</label>
+    </span>
+    <input type="date" name="one_off_date" id="chore-one-off-date" placeholder="One-time date" style="display:none">
+    <button type="submit">Add Chore</button>
+  </form>
+  <p class="hint">Pick a chore first: choose an existing one (its description auto-fills) or "+ New chore..." to define one. Then pick a "Kind": Recurring shows the day checkboxes, One-time shows a date picker. Assigning to a parent makes the chore informational only (no points, never late, excluded from the weekly report).</p>
+{{end}}
+
+{{define "parent/_chore_catalog"}}
+<section class="card card-wide" id="chore-catalog-card">
+  {{template "parent/_chore_catalog_inner" .}}
+</section>
+{{end}}
+
+{{define "parent/_chore_catalog_oob"}}
+<section class="card card-wide" id="chore-catalog-card" hx-swap-oob="true">
+  {{template "parent/_chore_catalog_inner" .}}
+</section>
+{{end}}
+
+{{define "parent/_chore_catalog_inner"}}
+  <h2>Chore Catalog</h2>
+  <p class="hint">The name and description here are shared by every child a chore is assigned to.</p>
+  {{if .Chores}}
+  <table>
+    <tr><th>Name</th><th></th></tr>
+    {{range .Chores}}
+    <tr id="chore-catalog-row-{{.ID}}">
+      <td>
+        <strong>{{.Name}}</strong>
+        {{if .Description.Valid}}<div class="hint">{{.Description.String}}</div>{{end}}
+      </td>
+      <td class="actions">
+        {{if .BootstrapManaged}}
+        <span class="hint" title="Managed by chores.json config">Administratively managed</span>
+        {{else}}
+        <button type="button" onclick="toggleChoreEdit({{.ID}})">Edit</button>
+        <form method="POST" action="/parent/chores/catalog/{{.ID}}/deactivate" style="display:inline"
+              hx-post="/parent/chores/catalog/{{.ID}}/deactivate" hx-target="#chore-catalog-card" hx-swap="outerHTML"
+              hx-confirm="Delete this chore? It will also be removed from every child it's assigned to.">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="btn-reject">Delete</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{if not .BootstrapManaged}}
+    <tr id="chore-catalog-edit-{{.ID}}" style="display:none">
+      <td colspan="2">
+        <form method="POST" action="/parent/chores/catalog/{{.ID}}" class="inline-form"
+              hx-post="/parent/chores/catalog/{{.ID}}" hx-target="#chore-catalog-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="text" name="name" value="{{.Name}}" required>
+          <textarea name="description" rows="3">{{.Description.String}}</textarea>
+          <button type="submit">Save</button>
+          <button type="button" onclick="toggleChoreEdit({{.ID}})">Cancel</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    {{end}}
+  </table>
+  {{else}}
+  <p class="hint">No chores defined yet - add one from the Chores card below.</p>
+  {{end}}
+{{end}}

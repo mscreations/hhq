@@ -1,0 +1,52 @@
+{{define "parent/_settings"}}
+<section class="card" id="settings-card">
+  <h2>Settings</h2>
+  {{if .SettingsError}}<p class="error">{{.SettingsError}}</p>{{end}}
+  <form id="settings-form" method="POST" action="/parent/settings" class="edit-form"
+        hx-post="/parent/settings" hx-target="#settings-card" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>App Title
+      <input type="text" name="app_title" value="{{.AppTitle}}" required>
+    </label>
+    <label>Timezone
+      <select name="timezone" required>
+        {{$current := .Timezone}}
+        {{range .Timezones}}
+        <option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Weather Location
+      <input type="text" name="location_query" placeholder="{{if .WeatherLocationName}}{{.WeatherLocationName}}{{else}}e.g. Chicago, IL{{end}}">
+    </label>
+    <label>Weather Units
+      <select name="units">
+        <option value="imperial"{{if eq .WeatherUnits "imperial"}} selected{{end}}>Fahrenheit</option>
+        <option value="metric"{{if eq .WeatherUnits "metric"}} selected{{end}}>Celsius</option>
+      </select>
+    </label>
+    <label>Radar Zoom
+      <input type="number" name="radar_zoom" min="1" max="18" value="{{.WeatherRadarZoom}}">
+    </label>
+    <label>Weekly Report Day
+      <select name="weekly_report_weekday">
+        {{$currentWeekday := .WeeklyReportWeekday}}
+        {{range $i, $name := .Weekdays}}
+        <option value="{{$i}}"{{if eq $i $currentWeekday}} selected{{end}}>{{$name}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Weekly Report Time
+      <select name="weekly_report_hour">
+        {{$currentHour := .WeeklyReportHour}}
+        {{range $h := .Hours}}
+        <option value="{{$h}}"{{if eq $h $currentHour}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+        {{end}}
+      </select>
+    </label>
+    <div class="edit-actions">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+</section>
+{{end}}

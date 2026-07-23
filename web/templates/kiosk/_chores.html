@@ -1,0 +1,32 @@
+{{define "kiosk/_chores"}}
+{{if .ChoresByChild}}
+<div class="chores-stack">
+  {{range .ChoresByChild}}
+  <div class="chore-row" style="border-top-color: {{.Color}}">
+    <h3 style="color: {{.Color}}">{{if .AvatarURL}}<img class="chore-child-avatar" src="{{.AvatarURL}}" alt="">{{else}}<img class="chore-child-avatar" src="/static/img/default-avatar.svg" alt="">{{end}}{{.Name}}</h3>
+    <ul class="chore-list">
+      {{range .Chores}}
+      <li class="chore-item chore-status-{{.Status}}{{if .IsLate}} chore-late{{end}}"
+          {{if or (eq (printf "%v" .Status) "incomplete") (eq (printf "%v" .Status) "rejected")}}
+          {{if .Description.Valid}}
+          onclick="openChoreConfirm({{.ID}}, {{.ChoreName}}, {{.Description.String}})"
+          {{else}}
+          hx-post="/kiosk/chores/{{.ID}}/complete" hx-target="#chores-content" hx-swap="innerHTML"
+          {{end}}
+          {{end}}
+          data-chore-id="{{.ID}}">
+        <span class="chore-name">{{.ChoreName}}</span>
+        {{if .IsLate}}<span class="chore-late-badge">LATE</span>{{end}}
+        {{if eq (printf "%v" .Status) "approved"}}<span class="chore-star">★</span>{{end}}
+        {{if eq (printf "%v" .Status) "pending_approval"}}<span class="chore-pending">awaiting parent...</span>{{end}}
+        {{if eq (printf "%v" .Status) "rejected"}}<span class="chore-rejected">tap to try again</span>{{end}}
+      </li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+</div>
+{{else}}
+<p class="empty-state">No chores assigned today.</p>
+{{end}}
+{{end}}

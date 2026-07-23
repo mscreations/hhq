@@ -1,0 +1,36 @@
+{{define "parent/_plugins"}}
+<section class="card" id="plugins-card">
+  <h2>Plugins</h2>
+  {{if .Plugins}}
+  <table class="calendars-table">
+    <tr><th>Plugin</th><th>Status</th><th>Enabled</th><th></th></tr>
+    {{range .Plugins}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td>
+        {{if .LastError.Valid}}
+          <span class="error" title="{{.LastError.String}}">Plugin unreachable</span>
+        {{else if .LastHealthyAt.Valid}}
+          <span class="hint">last healthy {{.LastHealthyAt.Time.Format "Jan 2 3:04 PM"}}</span>
+        {{else}}
+          <span class="hint">not yet contacted</span>
+        {{end}}
+      </td>
+      <td>
+        <form method="POST" action="/parent/plugins/{{.ID}}/toggle"
+              hx-post="/parent/plugins/{{.ID}}/toggle" hx-target="#plugins-card" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button type="submit" class="toggle-btn {{if .Enabled}}toggle-on{{else}}toggle-off{{end}}">
+            {{if .Enabled}}On{{else}}Off{{end}}
+          </button>
+        </form>
+      </td>
+      <td><a href="/parent/plugins/{{.ID}}/settings">Settings</a></td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="hint">No plugins registered. See the README for how to add one via CONFIG_DIR/plugins.json.</p>
+  {{end}}
+</section>
+{{end}}

@@ -1,0 +1,118 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hhq
+  namespace: hhq
+  labels:
+    app: hhq
+spec:
+  replicas: 1
+  # Keep this at 1: the app currently has no distributed locking around the
+  # scheduler jobs (calendar sync ticker, weekly report ticker), so running
+  # multiple replicas would sync calendars and send report emails multiple
+  # times over. If you want to scale the web tier independently later, split
+  # the scheduler out into its own single-replica Deployment/CronJobs first.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hhq
+  template:
+    metadata:
+      labels:
+        app: hhq
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: hhq
+          image: ghcr.io/mscreations/hhq:latest # replace with your actual registry/image/tag
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: hhq-config
+            - secretRef:
+                name: hhq-app-secrets
+            - secretRef:
+                name: hhq-smtp
+          env:
+            # Mapped individually from the CNPG-generated cluster secret.
+            # Adjust key names (user/password/dbname/host/port) if your CNPG
+            # version names them differently - see secret-example.yaml note.
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-postgres-app
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-postgres-app
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-postgres-app
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-postgres-app
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: myapp-postgres-app
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            # readOnlyRootFilesystem above means anything the app writes at
+            # runtime needs an explicit writable mount. The app itself doesn't
+            # currently write to disk (state lives in Postgres), but /tmp is
+            # provided in case a future feature (e.g. temp PDF staging) needs it.
+            - name: tmp
+              mountPath: /tmp
+            # Optional: mount hhq-bootstrap-config (see secret-example.yaml) at
+            # CONFIG_DIR's default path (/config) to bootstrap calendar
+            # accounts/children/chores/assignments from calendars.json,
+            # children.json, chores.json, and/or assignments.json - each Secret
+            # key becomes a file at that path. Uncomment both this and the
+            # matching volume below if you use it.
+            # - name: bootstrap-config
+            #   mountPath: /config
+            #   readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        # - name: bootstrap-config
+        #   secret:
+        #     secretName: hhq-bootstrap-config

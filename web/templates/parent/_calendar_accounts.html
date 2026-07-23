@@ -1,0 +1,94 @@
+{{define "parent/_calendar_accounts"}}
+<section class="card card-wide" id="calendar-accounts-card"
+  {{if .AnyAccountSyncing}}hx-get="/parent/calendar-accounts/refresh" hx-trigger="load delay:1.5s" hx-target="this" hx-swap="outerHTML"{{end}}>
+  <h2>Calendar Accounts</h2>
+  {{if .GoogleError}}<p class="error">{{.GoogleError}}</p>{{end}}
+  {{range .AccountsWithCalendars}}
+  <details class="collapsible-group account-block">
+    <summary class="account-header-main">
+        <strong>{{.Account.Name}}</strong>
+        <span class="provider-badge">{{.Account.Provider}}</span>
+        {{if .Account.BootstrapManaged}}
+          <span class="hint" title="Managed by CALENDAR_ACCOUNTS config">Administratively managed</span>
+        {{end}}
+        {{if .Account.LastSyncError.Valid}}
+          <span class="error">{{.Account.LastSyncError.String}}</span>
+        {{else if .Account.LastSyncedAt.Valid}}
+          <span class="hint">last synced {{.Account.LastSyncedAt.Time.Format "Jan 2 3:04 PM"}}</span>
+        {{else}}
+          <span class="hint">not yet synced</span>
+        {{end}}
+    </summary>
+    <div class="account-header-actions">
+      <form method="POST" action="/parent/calendar-accounts/{{.Account.ID}}/resync" style="display:inline"
+            hx-post="/parent/calendar-accounts/{{.Account.ID}}/resync" hx-target="#calendar-accounts-card" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button type="submit" class="btn-secondary btn-resync" {{if .Syncing}}disabled{{end}}>
+          {{if .Syncing}}<span class="spinner" aria-hidden="true"></span> Syncing…{{else}}Resync Now{{end}}
+        </button>
+      </form>
+      {{if not .Account.BootstrapManaged}}
+      <a href="/parent/calendar-accounts/{{.Account.ID}}/edit">Edit</a>
+      {{end}}
+    </div>
+
+    {{if .Calendars}}
+    <table class="calendars-table">
+      <tr><th>Color</th><th>Calendar</th><th>Last Synced</th><th>Status</th><th>Enabled</th></tr>
+      {{range .Calendars}}
+      <tr>
+        <td>
+          <form method="POST" action="/parent/calendars/{{.ID}}/color" class="color-picker-form"
+                hx-post="/parent/calendars/{{.ID}}/color" hx-target="#calendar-accounts-card" hx-swap="outerHTML" hx-trigger="change">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <span class="swatch" style="background:{{.Color}}"></span>
+            <select name="color" aria-label="Color for {{.Name}}">
+              {{$current := .Color}}
+              {{range $.PaletteColors}}
+              <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{colorName .}}</option>
+              {{end}}
+            </select>
+          </form>
+        </td>
+        <td>{{.Name}}</td>
+        <td>{{if .LastSyncedAt.Valid}}{{.LastSyncedAt.Time.Format "Jan 2 3:04 PM"}}{{else}}never{{end}}</td>
+        <td>{{if .LastSyncError.Valid}}<span class="error">{{.LastSyncError.String}}</span>{{else}}OK{{end}}</td>
+        <td>
+          <form method="POST" action="/parent/calendars/{{.ID}}/toggle"
+                hx-post="/parent/calendars/{{.ID}}/toggle" hx-target="#calendar-accounts-card" hx-swap="outerHTML">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="toggle-btn {{if .Enabled}}toggle-on{{else}}toggle-off{{end}}">
+              {{if .Enabled}}On{{else}}Off{{end}}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </table>
+    {{else}}
+    <p class="hint">No calendars discovered yet - try "Resync Now," or check the credentials via "Edit" if this persists.</p>
+    {{end}}
+  </details>
+  {{end}}
+
+  <form method="POST" action="/parent/calendar-accounts" class="inline-form add-account-form"
+        hx-post="/parent/calendar-accounts" hx-target="#calendar-accounts-card" hx-swap="outerHTML">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="text" name="name" placeholder="Label (e.g. Mom's Fastmail)" required>
+    <select name="provider" required>
+      <option value="caldav_fastmail">Fastmail</option>
+      <option value="caldav_icloud">iCloud</option>
+      <option value="caldav_generic">Other CalDAV</option>
+    </select>
+    <input type="text" name="caldav_url" placeholder="CalDAV URL (auto-filled for Fastmail/iCloud)">
+    <input type="text" name="username" placeholder="Username / Apple ID / email" required>
+    <input type="password" name="password" placeholder="App-specific password" required>
+    <button type="submit">Add Account</button>
+  </form>
+  <p class="hint">Use an app-specific password, not your real account password. Individual calendars are discovered automatically after adding an account, each with its own auto-assigned color and on/off toggle. See the README for Fastmail/iCloud setup links.</p>
+
+  {{if .GoogleOAuthEnabled}}
+  <p><a href="/parent/calendar-accounts/google/connect" class="btn-secondary">Connect Google Calendar</a></p>
+  {{end}}
+</section>
+{{end}}

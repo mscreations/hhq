@@ -1,0 +1,20 @@
+# Example Traefik IngressRoute. Adjust host/entrypoints/certResolver for your
+# setup. Since the app terminates its own auth internally (kiosk view is
+# open, /parent requires a session), no Traefik ForwardAuth/BasicAuth
+# middleware is required here - Traefik is just handling TLS + routing.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: hhq
+  namespace: hhq
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`hhq.example.com`)
+      kind: Rule
+      services:
+        - name: hhq
+          port: 80
+  tls:
+    certResolver: letsencrypt # replace with your cert resolver, or omit if using a wildcard/cert-manager Certificate instead

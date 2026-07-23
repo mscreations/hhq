@@ -1,0 +1,58 @@
+{{define "kiosk/_event_detail"}}
+<div class="event-detail" style="border-left-color: {{.CalendarColor}}">
+  <h3 class="event-detail-title">{{.Summary}}</h3>
+  <div class="event-detail-meta">
+    <span class="event-account-dot" style="background:{{.CalendarColor}}"></span>
+    <span>{{.AccountName}} / {{.CalendarName}}</span>
+  </div>
+  <div class="event-detail-time">
+    {{if .AllDay}}All day - {{.StartsAt.Format "Monday, Jan 2"}}
+    {{else}}{{.StartsAt.Format "Monday, Jan 2 - 3:04 PM"}} - {{.EndsAt.Format "3:04 PM"}}
+    {{end}}
+  </div>
+  {{if .Location.Valid}}
+  <div class="event-detail-row"><strong>Location:</strong> {{.Location.String}}</div>
+  {{end}}
+  {{if .OrganizerName.Valid}}
+  <div class="event-detail-row"><strong>Organizer:</strong> {{.OrganizerName.String}}{{if .OrganizerEmail.Valid}} ({{.OrganizerEmail.String}}){{end}}</div>
+  {{else if .OrganizerEmail.Valid}}
+  <div class="event-detail-row"><strong>Organizer:</strong> {{.OrganizerEmail.String}}</div>
+  {{end}}
+  {{if .Attendees}}
+  <div class="event-detail-row">
+    <strong>Attendees:</strong>
+    <ul class="event-detail-list">
+      {{range .Attendees}}
+      <li>{{if .Name}}{{.Name}}{{else}}{{.Email}}{{end}}{{if .Status}} <span class="attendee-status">({{.Status}})</span>{{end}}</li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+  {{if .Attachments}}
+  <div class="event-detail-row">
+    <strong>Attachments:</strong>
+    <ul class="event-detail-list">
+      {{range .Attachments}}
+      <li><a href="{{.URI}}" target="_blank" rel="noopener noreferrer">{{attachmentLabel .URI}}</a></li>
+      {{end}}
+    </ul>
+  </div>
+  {{end}}
+  {{if .Description.Valid}}
+  <div class="event-detail-row event-detail-description">{{.Description.String}}</div>
+  {{end}}
+  {{if .VisibleActions}}
+  <div class="event-detail-actions">
+    {{$eventID := .ID}}
+    {{range .VisibleActions}}
+    <button type="button" class="event-detail-action-btn"
+            hx-post="/kiosk/events/{{$eventID}}/actions/{{.ID}}"
+            hx-swap="none"
+            hx-on::after-request="if(event.detail.successful) document.getElementById('event-modal').classList.remove('open')">
+      {{.Label}}
+    </button>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
