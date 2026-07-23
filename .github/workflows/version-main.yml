@@ -39,7 +39,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch --tags --force
 
-          LAST_RELEASE=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-dev$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+          LAST_RELEASE=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | { grep -Ev -- '-dev$' || true; } | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
           if [ -z "$LAST_RELEASE" ]; then
             echo "No existing release tag found. The bootstrap tag v1.0.0 must be pushed to main manually once - see README.md's versioning section." >&2
             exit 1

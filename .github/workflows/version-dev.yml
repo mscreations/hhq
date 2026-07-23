@@ -36,7 +36,7 @@ jobs:
           # always fast-forwarded past main's latest release tag by the
           # sync-back PR in version-main.yml, so "reachable from HEAD" is
           # sufficient here (no need for an explicit merge-base with main).
-          RELEASE_TAG=$(git tag --merged HEAD -l 'v[0-9]*.[0-9]*.[0-9]*' | grep -Ev -- '-dev$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+          RELEASE_TAG=$(git tag --merged HEAD -l 'v[0-9]*.[0-9]*.[0-9]*' | { grep -Ev -- '-dev$' || true; } | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
           if [ -z "$RELEASE_TAG" ]; then
             echo "No release tag found reachable from HEAD. Expected the bootstrap tag v1.0.0 to exist on main and be present in dev's history - see README.md's versioning section." >&2
             exit 1
