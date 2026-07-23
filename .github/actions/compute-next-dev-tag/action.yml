@@ -1,0 +1,49 @@
+name: Compute and push next dev version tag
+description: >
+  Computes the next patch version (vX.Y.<patch>-dev) for the major.minor line
+  currently reachable from HEAD, tags it, and pushes the tag. Shared by
+  version-dev.yml (every push to dev) and version-main.yml (right after the
+  post-promotion sync-back merge, so dev gets a fresh tag immediately instead
+  of waiting for the next unrelated push).
+
+outputs:
+  tag:
+    description: The newly created tag, e.g. "v1.2.4-dev"
+    value: ${{ steps.tag.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute and push next dev version tag
+      id: tag
+      shell: bash
+      run: |
+        set -euo pipefail
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git fetch --tags --force
+
+        # The highest release tag (vX.Y.0, no "-dev" suffix) reachable from
+        # this commit is the currently-promoted major.minor line.
+        RELEASE_TAG=$(git tag --merged HEAD -l 'v[0-9]*.[0-9]*.[0-9]*' | { grep -Ev -- '-dev$' || true; } | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)
+        if [ -z "$RELEASE_TAG" ]; then
+          echo "No release tag found reachable from HEAD. Expected the bootstrap tag v1.0.0 to exist on main and be present in this branch's history - see README.md's versioning section." >&2
+          exit 1
+        fi
+
+        MAJOR=$(echo "$RELEASE_TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1/')
+        MINOR=$(echo "$RELEASE_TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\2/')
+
+        LAST_PATCH=0
+        for t in $(git tag -l "v${MAJOR}.${MINOR}.*-dev"); do
+          p=$(echo "$t" | sed -E "s/^v${MAJOR}\.${MINOR}\.([0-9]+)-dev\$/\1/")
+          if [ "$p" -gt "$LAST_PATCH" ]; then LAST_PATCH=$p; fi
+        done
+
+        NEXT_PATCH=$((LAST_PATCH + 1))
+        NEW_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}-dev"
+
+        echo "Computed new dev version: $NEW_TAG"
+        git tag "$NEW_TAG"
+        git push origin "$NEW_TAG"
+        echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"

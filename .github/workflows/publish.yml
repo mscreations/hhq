@@ -1,28 +1,48 @@
 name: Publish image to GHCR
 
-# Builds and pushes the Docker image whenever version-dev.yml or
-# version-main.yml pushes a new version tag - every meaningful push to dev
-# or main produces exactly one such tag, so this is effectively "build on
-# every dev/main push that matters" without racing the tag's own creation.
+# Builds and pushes the Docker image for a given version. Called directly
+# (via `uses: ./.github/workflows/publish.yml`) as a job from version-dev.yml
+# and version-main.yml right after they push a new tag - NOT triggered by
+# `push: tags:` on its own, because the tag pushes those workflows make use
+# the default GITHUB_TOKEN, and GitHub Actions deliberately does not let a
+# GITHUB_TOKEN-authored push trigger further workflow runs (recursion
+# prevention). Calling this as a reusable workflow sidesteps that entirely,
+# since it's part of the same run rather than a separately-triggered one.
+# The `push: tags:` trigger is kept too, so a manually-pushed version tag
+# (not made by the bot) still publishes on its own.
 on:
   push:
     tags: ["v*"]
-
-permissions:
-  contents: read
-  packages: write
+  workflow_call:
+    inputs:
+      version:
+        description: 'Tag to build and publish, e.g. "v1.2.3" or "v1.2.4-dev" - falls back to the triggering tag ref when omitted (the push: tags: case)'
+        required: false
+        type: string
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Only takes effect for the direct push:tags: trigger - when called via
+    # workflow_call, the caller's job-level permissions apply instead and
+    # this block is ignored.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.version }}
 
       - name: Determine version and floating tag
         id: vars
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          RAW="${{ inputs.version }}"
+          if [ -z "$RAW" ]; then
+            RAW="$GITHUB_REF_NAME"
+          fi
+          VERSION="${RAW#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-dev ]]; then
             echo "floating=latest-dev" >> "$GITHUB_OUTPUT"

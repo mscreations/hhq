@@ -1,11 +1,17 @@
 name: Version main release
 
 # On a merged dev->main pull request: tags the next minor release (e.g.
-# v1.2.0), cuts a GitHub Release for it (which triggers publish.yml, and is
-# how the parent dashboard's update-checker knows the "latest release"), then
-# opens and auto-merges a PR syncing main back into dev so dev's next push
-# picks up the new major.minor line. See version-dev.yml and README.md's
-# versioning section for the overall scheme.
+# v1.2.0), cuts a GitHub Release for it (how the parent dashboard's
+# update-checker knows the "latest release"), and calls publish.yml directly
+# to build/publish that release's image. Then opens and auto-merges a PR
+# syncing main back into dev, and - since that merge is also pushed with the
+# default GITHUB_TOKEN and so won't trigger version-dev.yml's own
+# push-to-dev trigger - immediately tags+publishes dev's first build against
+# the newly-promoted line too, rather than leaving dev without a fresh tag
+# until some unrelated future push. Both publish calls go through
+# publish.yml as a reusable workflow rather than its `push: tags:` trigger,
+# for the same GITHUB_TOKEN-doesn't-cascade reason. See version-dev.yml and
+# README.md's versioning section for the overall scheme.
 on:
   pull_request:
     types: [closed]
@@ -15,14 +21,15 @@ concurrency:
   group: version-main
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
-
 jobs:
   tag-release-and-sync-dev:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -74,3 +81,37 @@ jobs:
             --title "Sync main ${{ steps.release.outputs.tag }} back to dev" \
             --body "Automated post-merge sync so dev picks up ${{ steps.release.outputs.tag }}.")
           gh pr merge "$PR_URL" --merge --delete-branch
+
+  publish-release:
+    needs: tag-release-and-sync-dev
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      version: ${{ needs.tag-release-and-sync-dev.outputs.tag }}
+
+  tag-dev-after-sync:
+    needs: tag-release-and-sync-dev
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - uses: ./.github/actions/compute-next-dev-tag
+        id: tag
+
+  publish-dev:
+    needs: tag-dev-after-sync
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish.yml
+    with:
+      version: ${{ needs.tag-dev-after-sync.outputs.tag }}
