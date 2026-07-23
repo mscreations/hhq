@@ -30,16 +30,11 @@ import (
 // "next" (attacker-controllable via a crafted login link) is an open
 // redirect.
 func sanitizeNextPath(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") {
-		return "/parent"
-	}
-	// Reject anything a browser could reinterpret as protocol-relative
-	// (host-carrying) rather than a same-origin path: "//host/..." is the
-	// obvious case, but browsers also normalize a leading backslash to a
-	// slash, so "/\host/..." or "/\/host/..." are equally exploitable and
-	// were missed by only checking for "//".
-	rest := strings.TrimLeft(next[1:], "/\\")
-	if len(rest) != len(next[1:]) {
+	// Require a leading "/" (same-site path), and reject a second character
+	// of "/" or "\" - browsers treat both "//host/..." and "/\host/..." as
+	// protocol-relative absolute URLs, so checking only the first character
+	// is not enough to prevent an open redirect.
+	if len(next) < 1 || next[0] != '/' || (len(next) > 1 && (next[1] == '/' || next[1] == '\\')) {
 		return "/parent"
 	}
 	if u, err := url.Parse(next); err != nil || u.Host != "" || u.Scheme != "" || u.Opaque != "" {
