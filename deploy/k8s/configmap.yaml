@@ -8,6 +8,7 @@ metadata:
 data:
   LISTEN_ADDR: ":8080"
   LOG_LEVEL: "info" # set to "debug" for verbose troubleshooting logs (calendar sync detail, email send attempts, per-request logging, etc.)
+  LOG_FORMAT: "text" # set to "json" for one JSON object per log line (e.g. for Loki/log-aggregator ingestion)
   DB_PORT: "5432"
   DB_SSLMODE: "disable" # CNPG typically handles TLS internally to the cluster; adjust if your cluster requires "require"/"verify-full"
   CALENDAR_SYNC_INTERVAL_MINUTES: "15"

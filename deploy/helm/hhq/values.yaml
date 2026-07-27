@@ -28,6 +28,7 @@ hhq:
   # other optional env var from internal/config/config.go here as needed.
   config:
     LOG_LEVEL: "info"
+    LOG_FORMAT: "text" # set to "json" for one JSON object per log line (e.g. for Loki/log-aggregator ingestion)
     DB_SSLMODE: "disable"
     CALENDAR_SYNC_INTERVAL_MINUTES: "15"
     CALENDAR_WINDOW_DAYS: "7"

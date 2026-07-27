@@ -17,6 +17,7 @@ package logging
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"strings"
 	"testing"
@@ -31,6 +32,15 @@ func withLevel(t *testing.T, level Level) {
 	prev := current
 	current = level
 	t.Cleanup(func() { current = prev })
+}
+
+// withFormat temporarily overrides the package-level output format (set once
+// by init() from LOG_FORMAT at program startup) and restores it afterward.
+func withFormat(t *testing.T, f OutputFormat) {
+	t.Helper()
+	prev := format
+	format = f
+	t.Cleanup(func() { format = prev })
 }
 
 func captureLog(t *testing.T, fn func()) string {
@@ -128,5 +138,63 @@ func TestDebugEnabledReflectsCurrentLevel(t *testing.T) {
 	withLevel(t, LevelInfo)
 	if DebugEnabled() {
 		t.Error("expected DebugEnabled() to be false at LevelInfo")
+	}
+}
+
+func TestFormatFromEnvParsesAllRecognizedValues(t *testing.T) {
+	cases := []struct {
+		input string
+		want  OutputFormat
+	}{
+		{"json", FormatJSON},
+		{"JSON", FormatJSON},
+		{" json ", FormatJSON},
+		{"", FormatText},
+		{"text", FormatText},
+		{"nonsense", FormatText},
+	}
+	for _, c := range cases {
+		if got := formatFromEnv(c.input); got != c.want {
+			t.Errorf("formatFromEnv(%q) = %v, want %v", c.input, got, c.want)
+		}
+	}
+}
+
+func TestJSONFormatEmitsOneValidJSONObjectPerLine(t *testing.T) {
+	withLevel(t, LevelDebug)
+	withFormat(t, FormatJSON)
+
+	out := captureLog(t, func() { Infof("hello %s", "world") })
+	out = strings.TrimRight(out, "\n")
+	if strings.Contains(out, "\n") {
+		t.Fatalf("output = %q, want exactly one line", out)
+	}
+
+	var entry struct {
+		Time  string `json:"time"`
+		Level string `json:"level"`
+		Msg   string `json:"msg"`
+	}
+	if err := json.Unmarshal([]byte(out), &entry); err != nil {
+		t.Fatalf("output %q is not valid JSON: %v", out, err)
+	}
+	if entry.Level != "info" {
+		t.Errorf("entry.Level = %q, want %q", entry.Level, "info")
+	}
+	if entry.Msg != "hello world" {
+		t.Errorf("entry.Msg = %q, want %q", entry.Msg, "hello world")
+	}
+	if entry.Time == "" {
+		t.Error("entry.Time is empty, want an RFC3339 timestamp")
+	}
+}
+
+func TestTextFormatIsUnaffectedByFormatSwitch(t *testing.T) {
+	withLevel(t, LevelDebug)
+	withFormat(t, FormatText)
+
+	out := captureLog(t, func() { Warnf("careful") })
+	if !strings.Contains(out, "[WARN] careful") {
+		t.Fatalf("output = %q, want it to contain the warn message in text form", out)
 	}
 }
