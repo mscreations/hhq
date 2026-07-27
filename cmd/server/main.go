@@ -205,7 +205,7 @@ func templateNames(t *template.Template) []string {
 }
 
 func main() {
-	logging.Infof("HappyHome Quest starting up (log level controlled by LOG_LEVEL env var, current effective level shown by debug messages below if LOG_LEVEL=debug)")
+	logging.Infof("HappyHome Quest starting up (version %s, log level controlled by LOG_LEVEL env var, current effective level shown by debug messages below if LOG_LEVEL=debug)", Version)
 	logging.Debugf("loading configuration from environment")
 
 	cfg, err := config.Load()
