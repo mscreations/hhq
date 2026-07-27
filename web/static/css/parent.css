@@ -184,6 +184,33 @@ input, select, textarea { border: 1px solid var(--border); }
 .edit-form { display: flex; flex-direction: column; gap: 14px; max-width: 420px; }
 .edit-form label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--text-dim); }
 .edit-form input { padding: 8px 10px; border-radius: 6px; }
+
+/* Settings dialog groups (fieldsets) - scoped to #settings-modal-overlay so
+   the wider layout doesn't leak into other .modal/.edit-form users
+   (the plugin-error modal, calendar_account_edit.html). */
+#settings-modal-overlay .modal { max-width: 640px; }
+#settings-modal-overlay .edit-form { max-width: none; }
+.settings-group {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 16px;
+  margin: 0 0 16px;
+}
+.settings-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.settings-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+@media (max-width: 600px) {
+  .settings-group-grid { grid-template-columns: 1fr; }
+}
 .checkbox-label { flex-direction: row !important; align-items: center; gap: 8px !important; }
 .edit-actions { margin-top: 8px; }
 .edit-actions button { background: var(--accent); color: white; border: none; padding: 10px 18px; border-radius: 8px; cursor: pointer; }
