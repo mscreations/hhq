@@ -18,6 +18,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -129,20 +130,55 @@ type AssignmentBootstrap struct {
 	OneOffDate string `json:"one_off_date"`
 }
 
+// assignmentEntry is one chore assignment as written under a child's key in
+// assignments.json - everything AssignmentBootstrap has except Child, which
+// comes from the enclosing map key instead.
+type assignmentEntry struct {
+	Chore      string   `json:"chore"`
+	Points     int      `json:"points"`
+	DaysOfWeek []string `json:"days_of_week"`
+	OneOffDate string   `json:"one_off_date"`
+}
+
 // ParseAssignmentsBootstrap unmarshals CONFIG_DIR/assignments.json's
-// contents - a flat JSON array of AssignmentBootstrap entries, e.g.:
+// contents - a JSON object keyed by child name, each holding an array of
+// that child's chore assignments, e.g.:
 //
-//	[
-//	  {"child": "Alex", "chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]},
-//	  {"child": "Sam", "chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
-//	]
+//	{
+//	  "Alex": [
+//	    {"chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]}
+//	  ],
+//	  "Sam": [
+//	    {"chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
+//	  ]
+//	}
 //
 // Per-entry validation (unknown child/chore, invalid schedule) happens later
-// in BootstrapAssignments, not here.
+// in BootstrapAssignments, not here. Child names are processed in sorted
+// order so the resulting entry order is deterministic.
 func ParseAssignmentsBootstrap(raw string) ([]AssignmentBootstrap, error) {
-	var entries []AssignmentBootstrap
-	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+	var byChild map[string][]assignmentEntry
+	if err := json.Unmarshal([]byte(raw), &byChild); err != nil {
 		return nil, fmt.Errorf("parsing assignments.json: %w", err)
+	}
+
+	children := make([]string, 0, len(byChild))
+	for child := range byChild {
+		children = append(children, child)
+	}
+	sort.Strings(children)
+
+	var entries []AssignmentBootstrap
+	for _, child := range children {
+		for _, e := range byChild[child] {
+			entries = append(entries, AssignmentBootstrap{
+				Child:      child,
+				Chore:      e.Chore,
+				Points:     e.Points,
+				DaysOfWeek: e.DaysOfWeek,
+				OneOffDate: e.OneOffDate,
+			})
+		}
 	}
 	return entries, nil
 }

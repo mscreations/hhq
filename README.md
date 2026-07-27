@@ -304,14 +304,19 @@ instead.
     {"name": "Feed the dog"}
   ]
   ```
-- **`assignments.json`** - a flat JSON array, each entry a chore assignment
-  pairing a `child` (matched by name against `children.json`) with a `chore`
-  (matched by name against `chores.json`) and its schedule, e.g.:
+- **`assignments.json`** - a JSON object keyed by child name (matched
+  against `children.json`), each holding an array of that child's chore
+  assignments, pairing a `chore` (matched by name against `chores.json`)
+  with its schedule, e.g.:
   ```json
-  [
-    {"child": "Alex", "chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]},
-    {"child": "Sam", "chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
-  ]
+  {
+    "Alex": [
+      {"chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]}
+    ],
+    "Sam": [
+      {"chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
+    ]
+  }
   ```
   `days_of_week` entries are day names (case-insensitive, full or
   three-letter abbreviation); exactly one of `days_of_week` or

@@ -86,19 +86,20 @@ bootstrap:
   #     description: Bins go to the curb Tuesday night
   #   - name: Feed the dog
 
-  # List of {child, chore, points, days_of_week[] | one_off_date} - see
-  # AssignmentBootstrap. Exactly one of days_of_week/one_off_date per entry.
-  assignments: []
+  # Map of child name -> list of {chore, points, days_of_week[] |
+  # one_off_date} - see AssignmentBootstrap. Exactly one of
+  # days_of_week/one_off_date per entry.
+  assignments: {}
   # e.g.
   # assignments:
-  #   - child: Alex
-  #     chore: Take out trash
-  #     points: 5
-  #     days_of_week: ["tue", "fri"]
-  #   - child: Sam
-  #     chore: Feed the dog
-  #     points: 2
-  #     one_off_date: "2026-08-01"
+  #   Alex:
+  #     - chore: Take out trash
+  #       points: 5
+  #       days_of_week: ["tue", "fri"]
+  #   Sam:
+  #     - chore: Feed the dog
+  #       points: 2
+  #       one_off_date: "2026-08-01"
 
   # List of {name, provider, url, username, password | password_file} - see
   # config.CalendarAccountBootstrap. Prefer password_file (a path to a file
