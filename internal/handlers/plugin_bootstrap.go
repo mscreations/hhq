@@ -112,6 +112,94 @@ func (a *App) BootstrapPlugins(ctx context.Context, entries []config.PluginBoots
 	}
 }
 
+// pluginCalendarCleanupGracePeriod is how long after startup hhq waits before
+// checking for orphaned plugin-managed calendar accounts (see
+// CleanupOrphanedPluginCalendars) - long enough that ensurePluginReady's 15s
+// registration retry (pluginRegistrationRetryInterval) has had several real
+// chances to succeed even if hhq and a slow-starting plugin came up at the
+// same instant, short enough that a genuinely-removed plugin's synthetic
+// calendar and its cached events don't linger indefinitely. var (not const)
+// so tests can shrink it rather than waiting out the real default.
+var pluginCalendarCleanupGracePeriod = 3 * time.Minute
+
+// SchedulePluginCalendarCleanup runs CleanupOrphanedPluginCalendars exactly
+// once, pluginCalendarCleanupGracePeriod after being called, then returns -
+// it does not repeat. Meant to be called once from main.go right after the
+// bootstrap files (including plugins.json) have been reconciled. ctx is the
+// app's shutdown-aware context, so a pending check is abandoned cleanly if
+// the process shuts down before the grace period elapses.
+func (a *App) SchedulePluginCalendarCleanup(ctx context.Context) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pluginCalendarCleanupGracePeriod):
+		}
+		a.CleanupOrphanedPluginCalendars(ctx)
+	}()
+}
+
+// CleanupOrphanedPluginCalendars removes any ProviderPlugin, BootstrapManaged
+// calendar account whose owning plugin either no longer exists (e.g. it was
+// removed from plugins.json - BootstrapPlugins' own removal loop deletes the
+// plugin row, but NOT its synthetic calendar_accounts row: hhq_plugins.
+// calendar_id is ON DELETE SET NULL, not the other way around, so nothing
+// else ever cleans this up on its own) or has never once connected
+// successfully (LastHealthyAt unset - covers both a plugin that's still
+// failing to register and one whose row is simply gone). Deleting the
+// account cascades to its synthetic calendar and cached events, same as the
+// dashboard's own delete button.
+//
+// This is deliberately NOT run immediately at startup (see
+// BootstrapCalendarAccounts, which used to delete these accounts on every
+// boot before a plugin had any chance to register - the bug this function
+// replaces) - it's meant to run once, well after boot, via
+// SchedulePluginCalendarCleanup. A plugin that only manages to connect after
+// this check has already removed its account isn't stuck either: the next
+// successful manifest fetch re-provisions a fresh synthetic calendar via
+// ensurePluginCalendar, just with a new id/color and an empty events cache
+// that repopulates on its next sync.
+func (a *App) CleanupOrphanedPluginCalendars(ctx context.Context) {
+	accounts, err := a.CalendarAccounts.ListAll(ctx)
+	if err != nil {
+		logging.Errorf("plugin calendar cleanup: listing calendar accounts: %v", err)
+		return
+	}
+
+	for _, account := range accounts {
+		if account.Provider != models.ProviderPlugin || !account.BootstrapManaged {
+			continue
+		}
+
+		cals, err := a.Calendars.ListForAccount(ctx, account.ID)
+		if err != nil {
+			logging.Errorf("plugin calendar cleanup: listing calendars for account %q (id=%d): %v", account.Name, account.ID, err)
+			continue
+		}
+		if len(cals) == 0 {
+			// Nothing provisioned yet to resolve a plugin from - this
+			// shouldn't normally happen (ensurePluginCalendar creates the
+			// account and its calendar together), so leave it rather than
+			// guess.
+			continue
+		}
+
+		plugin, err := a.Plugins.GetByCalendarID(ctx, cals[0].ID)
+		if err == nil && plugin.LastHealthyAt.Valid {
+			continue // owning plugin exists and has connected at least once
+		}
+
+		if err != nil {
+			logging.Infof("plugin calendar cleanup: removing calendar account %q (id=%d) - owning plugin no longer exists", account.Name, account.ID)
+		} else {
+			logging.Infof("plugin calendar cleanup: removing calendar account %q (id=%d) - plugin %q never connected within %s of startup", account.Name, account.ID, plugin.ID, pluginCalendarCleanupGracePeriod)
+		}
+		if err := a.CalendarAccounts.Delete(ctx, account.ID); err != nil {
+			logging.Errorf("plugin calendar cleanup: removing calendar account %q (id=%d): %v", account.Name, account.ID, err)
+		}
+	}
+}
+
 // ensurePluginReady makes one immediate attempt to get id ready to talk to
 // (self-registered, with its manifest cached) and, if that fails because the
 // plugin isn't reachable yet, keeps retrying in the background every

@@ -16,6 +16,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -116,6 +117,182 @@ func TestRetryPluginRegistrationSucceedsOnceTheStartOrderingClears(t *testing.T)
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("timed out waiting for retryPluginRegistration to store a token")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestCleanupOrphanedPluginCalendarsRemovesAccountWithNoOwningPlugin covers
+// the "legitimately removed plugin" case: BootstrapPlugins' own removal loop
+// deletes the plugin row for an entry dropped from plugins.json, but that
+// deletion does not cascade to the plugin's synthetic calendar_accounts row
+// (hhq_plugins.calendar_id is ON DELETE SET NULL, not the reverse), so
+// nothing else would ever clean it up without this function.
+func TestCleanupOrphanedPluginCalendarsRemovesAccountWithNoOwningPlugin(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	ctx := t.Context()
+
+	calendarAccounts := &models.CalendarAccountStore{DB: conn}
+	calendars := &models.CalendarStore{DB: conn}
+	plugins := &models.PluginStore{DB: conn}
+	a := &App{CalendarAccounts: calendarAccounts, Calendars: calendars, Plugins: plugins}
+
+	accountID, err := calendarAccounts.Create(ctx, models.CalendarAccount{
+		Name: "Plugin: Orphaned", Provider: models.ProviderPlugin, BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create account: %v", err)
+	}
+	if _, err := calendars.UpsertDiscovered(ctx, accountID, "orphaned-plugin", "Orphaned", "#ff0000"); err != nil {
+		t.Fatalf("UpsertDiscovered: %v", err)
+	}
+	// No plugin row created at all - simulates one already removed by
+	// BootstrapPlugins' own removal loop.
+
+	a.CleanupOrphanedPluginCalendars(ctx)
+
+	if _, err := calendarAccounts.GetByID(ctx, accountID); err == nil {
+		t.Fatal("expected orphaned plugin calendar account to be removed")
+	}
+}
+
+// TestCleanupOrphanedPluginCalendarsRemovesNeverConnectedPlugin covers a
+// plugin that's still present in plugins.json but has never once completed a
+// successful manifest fetch (LastHealthyAt unset) - e.g. permanently
+// misconfigured or offline, not just slow to start.
+func TestCleanupOrphanedPluginCalendarsRemovesNeverConnectedPlugin(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	ctx := t.Context()
+
+	calendarAccounts := &models.CalendarAccountStore{DB: conn}
+	calendars := &models.CalendarStore{DB: conn}
+	plugins := &models.PluginStore{DB: conn}
+	a := &App{CalendarAccounts: calendarAccounts, Calendars: calendars, Plugins: plugins}
+
+	if err := plugins.Create(ctx, models.Plugin{
+		ID: "never-connected", Name: "Never Connected", BaseURL: "http://example.invalid",
+		Enabled: true, BootstrapManaged: true,
+	}); err != nil {
+		t.Fatalf("Create plugin: %v", err)
+	}
+
+	accountID, err := calendarAccounts.Create(ctx, models.CalendarAccount{
+		Name: "Plugin: Never Connected", Provider: models.ProviderPlugin, BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create account: %v", err)
+	}
+	calendarID, err := calendars.UpsertDiscovered(ctx, accountID, "never-connected", "Never Connected", "#ff0000")
+	if err != nil {
+		t.Fatalf("UpsertDiscovered: %v", err)
+	}
+	if err := plugins.SetCalendarID(ctx, "never-connected", calendarID); err != nil {
+		t.Fatalf("SetCalendarID: %v", err)
+	}
+	// Deliberately never call MarkHealth - LastHealthyAt stays unset,
+	// simulating a plugin that's been retried repeatedly but has never
+	// actually answered a manifest request successfully.
+
+	a.CleanupOrphanedPluginCalendars(ctx)
+
+	if _, err := calendarAccounts.GetByID(ctx, accountID); err == nil {
+		t.Fatal("expected never-connected plugin's calendar account to be removed")
+	}
+}
+
+// TestCleanupOrphanedPluginCalendarsKeepsConnectedPlugin is the negative
+// case: a plugin that has connected at least once (LastHealthyAt set) must
+// survive the cleanup pass regardless of how long ago that was - this is the
+// exact scenario the immediate at-boot deletion this function replaces used
+// to break (see BootstrapCalendarAccounts).
+func TestCleanupOrphanedPluginCalendarsKeepsConnectedPlugin(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	ctx := t.Context()
+
+	calendarAccounts := &models.CalendarAccountStore{DB: conn}
+	calendars := &models.CalendarStore{DB: conn}
+	plugins := &models.PluginStore{DB: conn}
+	a := &App{CalendarAccounts: calendarAccounts, Calendars: calendars, Plugins: plugins}
+
+	if err := plugins.Create(ctx, models.Plugin{
+		ID: "healthy-plugin", Name: "Healthy Plugin", BaseURL: "http://example.invalid",
+		Enabled: true, BootstrapManaged: true,
+	}); err != nil {
+		t.Fatalf("Create plugin: %v", err)
+	}
+
+	accountID, err := calendarAccounts.Create(ctx, models.CalendarAccount{
+		Name: "Plugin: Healthy", Provider: models.ProviderPlugin, BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create account: %v", err)
+	}
+	calendarID, err := calendars.UpsertDiscovered(ctx, accountID, "healthy-plugin", "Healthy", "#00ff00")
+	if err != nil {
+		t.Fatalf("UpsertDiscovered: %v", err)
+	}
+	if err := plugins.SetCalendarID(ctx, "healthy-plugin", calendarID); err != nil {
+		t.Fatalf("SetCalendarID: %v", err)
+	}
+	if err := plugins.MarkHealth(ctx, "healthy-plugin", nil); err != nil {
+		t.Fatalf("MarkHealth: %v", err)
+	}
+
+	a.CleanupOrphanedPluginCalendars(ctx)
+
+	if _, err := calendarAccounts.GetByID(ctx, accountID); err != nil {
+		t.Fatalf("expected connected plugin's calendar account to survive: %v", err)
+	}
+}
+
+// TestSchedulePluginCalendarCleanupRunsAfterGracePeriodAndRespectsShutdown
+// exercises the actual scheduling wrapper: the check must not run before the
+// grace period elapses, must run once it does, and must never fire at all if
+// ctx is cancelled first (app shutdown before the grace period elapses).
+func TestSchedulePluginCalendarCleanupRunsAfterGracePeriodAndRespectsShutdown(t *testing.T) {
+	conn := testutil.RequireDB(t)
+
+	orig := pluginCalendarCleanupGracePeriod
+	t.Cleanup(func() { pluginCalendarCleanupGracePeriod = orig })
+
+	calendarAccounts := &models.CalendarAccountStore{DB: conn}
+	calendars := &models.CalendarStore{DB: conn}
+	plugins := &models.PluginStore{DB: conn}
+	a := &App{CalendarAccounts: calendarAccounts, Calendars: calendars, Plugins: plugins}
+
+	accountID, err := calendarAccounts.Create(t.Context(), models.CalendarAccount{
+		Name: "Plugin: Scheduled", Provider: models.ProviderPlugin, BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create account: %v", err)
+	}
+	if _, err := calendars.UpsertDiscovered(t.Context(), accountID, "scheduled-plugin", "Scheduled", "#0000ff"); err != nil {
+		t.Fatalf("UpsertDiscovered: %v", err)
+	}
+
+	// First: cancel the context before the grace period elapses and confirm
+	// the account is never touched.
+	pluginCalendarCleanupGracePeriod = 200 * time.Millisecond
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	a.SchedulePluginCalendarCleanup(cancelledCtx)
+	cancel()
+	time.Sleep(400 * time.Millisecond)
+	if _, err := calendarAccounts.GetByID(t.Context(), accountID); err != nil {
+		t.Fatalf("account should survive a cancelled schedule: %v", err)
+	}
+
+	// Then: let it actually run and confirm it fires and removes the
+	// still-orphaned account.
+	pluginCalendarCleanupGracePeriod = 30 * time.Millisecond
+	a.SchedulePluginCalendarCleanup(t.Context())
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := calendarAccounts.GetByID(t.Context(), accountID); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for scheduled cleanup to remove the account")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

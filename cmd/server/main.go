@@ -324,6 +324,7 @@ func main() {
 	bootstrapFromFile(ctx, configDir, "chores.json", "chore(s)", config.ParseChoresBootstrap, app.BootstrapChores)
 	bootstrapFromFile(ctx, configDir, "assignments.json", "assignment(s)", config.ParseAssignmentsBootstrap, app.BootstrapAssignments)
 	bootstrapFromFile(ctx, configDir, "plugins.json", "plugin(s)", config.ParsePluginsBootstrap, app.BootstrapPlugins)
+	app.SchedulePluginCalendarCleanup(ctx)
 
 	if location, latStr, lonStr, units := config.Getenv("WEATHER_LOCATION"), config.Getenv("WEATHER_LAT"), config.Getenv("WEATHER_LON"), config.Getenv("WEATHER_UNITS"); location != "" || (latStr != "" && lonStr != "") {
 		var lat, lon float64

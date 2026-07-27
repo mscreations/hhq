@@ -1282,6 +1282,41 @@ func TestBootstrapCalendarAccountsRemovesEntryDroppedFromConfig(t *testing.T) {
 	}
 }
 
+// TestBootstrapCalendarAccountsPreservesPluginSyntheticCalendar is a
+// regression test: a plugin's synthetic calendar_accounts row (created by
+// ensurePluginCalendar, see plugin_bootstrap.go) is BootstrapManaged=true
+// but is never listed in calendars.json - it's reconciled against
+// plugins.json instead. Before this fix, BootstrapCalendarAccounts's own
+// removal loop treated it as an orphaned bootstrap entry and deleted it on
+// every single startup, even though the plugin itself was still present
+// (and possibly just not yet reachable/registered).
+func TestBootstrapCalendarAccountsPreservesPluginSyntheticCalendar(t *testing.T) {
+	ts := newTestServer(t)
+
+	pluginAccountID, err := ts.App.CalendarAccounts.Create(t.Context(), models.CalendarAccount{
+		Name:             "Plugin: Bill Tracker",
+		Provider:         models.ProviderPlugin,
+		BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A calendars.json that knows nothing about the plugin's synthetic
+	// account (as is always the case - plugins are never listed there).
+	ts.App.BootstrapCalendarAccounts(t.Context(), []config.CalendarAccountBootstrap{
+		{Name: "Fastmail", Provider: "fastmail", Username: "user@fastmail.com", Password: "pw"},
+	})
+
+	account, err := ts.App.CalendarAccounts.GetByID(t.Context(), pluginAccountID)
+	if err != nil {
+		t.Fatalf("plugin synthetic calendar account was deleted by calendars.json reconciliation: %v", err)
+	}
+	if account.Provider != models.ProviderPlugin {
+		t.Fatalf("unexpected provider on surviving account: %+v", account)
+	}
+}
+
 func TestBootstrapCalendarAccountsSkipsNameCollisionWithUIAccount(t *testing.T) {
 	ts := newTestServer(t)
 

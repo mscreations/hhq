@@ -191,7 +191,12 @@ func (a *App) syncPluginAccount(ctx context.Context, account *models.CalendarAcc
 // name no longer appears in entries is deleted (same as the dashboard's
 // delete button - cascades to its calendars/cached events), since otherwise
 // there would be no way to remove an account added via bootstrap short of
-// reaching into the database directly.
+// reaching into the database directly. ProviderPlugin accounts are also
+// BootstrapManaged (see ensurePluginCalendar in plugin_bootstrap.go) but are
+// never listed in calendars.json - they're reconciled against plugins.json
+// instead (BootstrapPlugins' own removal loop), so they're excluded here to
+// avoid deleting a plugin's synthetic calendar on every single startup
+// before that plugin has even had a chance to connect and register.
 func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.CalendarAccountBootstrap) {
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
@@ -262,7 +267,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 		return
 	}
 	for _, account := range all {
-		if !account.BootstrapManaged || seen[account.Name] {
+		if !account.BootstrapManaged || seen[account.Name] || account.Provider == models.ProviderPlugin {
 			continue
 		}
 		if err := a.CalendarAccounts.Delete(ctx, account.ID); err != nil {
