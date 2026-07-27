@@ -18,7 +18,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 )
@@ -130,57 +129,20 @@ type AssignmentBootstrap struct {
 	OneOffDate string `json:"one_off_date"`
 }
 
-// assignmentBootstrapChore is one entry in an assignments.json child's chore
-// list - AssignmentBootstrap minus Child, which comes from the enclosing
-// object key instead.
-type assignmentBootstrapChore struct {
-	Chore      string   `json:"chore"`
-	Points     int      `json:"points"`
-	DaysOfWeek []string `json:"days_of_week"`
-	OneOffDate string   `json:"one_off_date"`
-}
-
 // ParseAssignmentsBootstrap unmarshals CONFIG_DIR/assignments.json's
-// contents - a JSON object keyed by child name (matched against
-// children.json/the Children card), each value a JSON array of that child's
-// chore assignments, e.g.:
+// contents - a flat JSON array of AssignmentBootstrap entries, e.g.:
 //
-//	{
-//	  "Alex": [
-//	    {"chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]}
-//	  ],
-//	  "Sam": [
-//	    {"chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
-//	  ]
-//	}
+//	[
+//	  {"child": "Alex", "chore": "Take out trash", "points": 5, "days_of_week": ["tue", "fri"]},
+//	  {"child": "Sam", "chore": "Feed the dog", "points": 2, "one_off_date": "2026-08-01"}
+//	]
 //
-// Child names are visited in sorted order so results (and any log output
-// from BootstrapAssignments) are deterministic run to run. Per-entry
-// validation (unknown child/chore, invalid schedule) happens later in
-// BootstrapAssignments, not here.
+// Per-entry validation (unknown child/chore, invalid schedule) happens later
+// in BootstrapAssignments, not here.
 func ParseAssignmentsBootstrap(raw string) ([]AssignmentBootstrap, error) {
-	var byChild map[string][]assignmentBootstrapChore
-	if err := json.Unmarshal([]byte(raw), &byChild); err != nil {
-		return nil, fmt.Errorf("parsing assignments.json: %w", err)
-	}
-
-	children := make([]string, 0, len(byChild))
-	for child := range byChild {
-		children = append(children, child)
-	}
-	sort.Strings(children)
-
 	var entries []AssignmentBootstrap
-	for _, child := range children {
-		for _, c := range byChild[child] {
-			entries = append(entries, AssignmentBootstrap{
-				Child:      child,
-				Chore:      c.Chore,
-				Points:     c.Points,
-				DaysOfWeek: c.DaysOfWeek,
-				OneOffDate: c.OneOffDate,
-			})
-		}
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		return nil, fmt.Errorf("parsing assignments.json: %w", err)
 	}
 	return entries, nil
 }

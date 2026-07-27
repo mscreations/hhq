@@ -8,6 +8,7 @@ TAG          ?= latest
 DOCKERFILE   := deploy/Dockerfile
 COVER_FILE   := coverage.out
 VERSION      ?= dev
+VARIANT      ?= dev
 
 HTMX_MIN_AGE_DAYS ?= 90
 
@@ -26,6 +27,7 @@ help:
 	@echo "  fmt            Run gofmt -l on the tree (lists unformatted files)"
 	@echo "  tidy           Run go mod tidy"
 	@echo "  docker-build   Build the container image (context = repo root, not deploy/)"
+	@echo "                 VARIANT=dev builds a shell-capable debug image (default: dev)"
 	@echo "  docker-run     Run the container image locally, env from .env"
 	@echo "  docker-push    Push the container image"
 	@echo "  htmx-check     Report current vs. latest htmx release, no changes"
@@ -67,7 +69,7 @@ tidy:
 # context must be the repo root, not deploy/ - `docker build deploy/` (or
 # `.\deploy\` on Windows) fails because go.mod isn't visible in that context.
 docker-build:
-	docker build --build-arg VERSION=$(VERSION) -f $(DOCKERFILE) -t $(IMAGE):$(TAG) .
+	docker build --build-arg VERSION=$(VERSION) --build-arg VARIANT=$(VARIANT) -f $(DOCKERFILE) -t $(IMAGE):$(TAG) .
 
 docker-run: docker-build
 	docker run --rm -p 8080:8080 --env-file .env $(IMAGE):$(TAG)

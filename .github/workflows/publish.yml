@@ -55,8 +55,10 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-dev ]]; then
             echo "floating=latest-dev" >> "$GITHUB_OUTPUT"
+            echo "variant=dev" >> "$GITHUB_OUTPUT"
           else
             echo "floating=latest" >> "$GITHUB_OUTPUT"
+            echo "variant=prod" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: docker/setup-buildx-action@v4
@@ -79,6 +81,7 @@ jobs:
           provenance: false
           build-args: |
             VERSION=${{ steps.vars.outputs.version }}
+            VARIANT=${{ steps.vars.outputs.variant }}
           tags: |
             ghcr.io/mscreations/hhq:${{ steps.vars.outputs.version }}
             ghcr.io/mscreations/hhq:${{ steps.vars.outputs.floating }}

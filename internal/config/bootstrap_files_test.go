@@ -97,14 +97,10 @@ func TestParseChoresBootstrapNameInvalidType(t *testing.T) {
 }
 
 func TestParseAssignmentsBootstrap(t *testing.T) {
-	entries, err := ParseAssignmentsBootstrap(`{
-		"Kid One": [
-			{"chore": "Dishes", "points": 5, "days_of_week": ["tue", "fri"]}
-		],
-		"Kid Two": [
-			{"chore": "Trash", "one_off_date": "2026-08-01"}
-		]
-	}`)
+	entries, err := ParseAssignmentsBootstrap(`[
+		{"child": "Kid One", "chore": "Dishes", "points": 5, "days_of_week": ["tue", "fri"]},
+		{"child": "Kid Two", "chore": "Trash", "one_off_date": "2026-08-01"}
+	]`)
 	if err != nil {
 		t.Fatalf("ParseAssignmentsBootstrap: %v", err)
 	}
@@ -120,12 +116,10 @@ func TestParseAssignmentsBootstrap(t *testing.T) {
 }
 
 func TestParseAssignmentsBootstrapMultipleChoresPerChild(t *testing.T) {
-	entries, err := ParseAssignmentsBootstrap(`{
-		"Alex": [
-			{"chore": "Dishes", "points": 5, "days_of_week": ["mon"]},
-			{"chore": "Trash", "points": 2, "days_of_week": ["tue"]}
-		]
-	}`)
+	entries, err := ParseAssignmentsBootstrap(`[
+		{"child": "Alex", "chore": "Dishes", "points": 5, "days_of_week": ["mon"]},
+		{"child": "Alex", "chore": "Trash", "points": 2, "days_of_week": ["tue"]}
+	]`)
 	if err != nil {
 		t.Fatalf("ParseAssignmentsBootstrap: %v", err)
 	}
