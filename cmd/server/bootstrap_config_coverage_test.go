@@ -159,7 +159,7 @@ func TestBootstrapChildrenAppliesAvatarFileOnCreate(t *testing.T) {
 }
 
 // TestBootstrapChildrenAvatarFileReconcileIsNoopWhenUnchanged covers
-// applyChildAvatarFile's checksum comparison: a second reconcile pass with
+// applyUserAvatarFile's checksum comparison: a second reconcile pass with
 // the same file contents must not bump avatar_updated_at.
 func TestBootstrapChildrenAvatarFileReconcileIsNoopWhenUnchanged(t *testing.T) {
 	ts := newTestServer(t)

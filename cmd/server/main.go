@@ -119,10 +119,17 @@ func bootstrapFirstParent(ctx context.Context, users *models.UserStore) error {
 	if err != nil {
 		return err
 	}
-	if _, err := users.CreateParent(ctx, name, emailAddr, hash); err != nil {
+	id, err := users.CreateParent(ctx, name, emailAddr, hash)
+	if err != nil {
 		return err
 	}
 	logging.Infof("bootstrap: created initial parent account %q - remove BOOTSTRAP_PARENT_* env vars after confirming login works", emailAddr)
+
+	if avatarFile := config.Getenv("BOOTSTRAP_PARENT_AVATAR_FILE"); avatarFile != "" {
+		if err := handlers.ApplyUserAvatarFile(ctx, users, id, avatarFile); err != nil {
+			logging.Errorf("bootstrap: applying BOOTSTRAP_PARENT_AVATAR_FILE for initial parent %q: %v", emailAddr, err)
+		}
+	}
 	return nil
 }
 
@@ -465,8 +472,8 @@ func buildRouter(app *handlers.App) http.Handler {
 		r.Post("/parent/users/parents", app.CreateParent)
 		r.Post("/parent/users/{id}/resend-invite", app.ResendParentInvite)
 		r.Post("/parent/users/{id}/display-name", app.SetParentDisplayName)
-		r.Post("/parent/users/{id}/avatar", app.UploadChildAvatar)
-		r.Post("/parent/users/{id}/avatar/remove", app.RemoveChildAvatar)
+		r.Post("/parent/users/{id}/avatar", app.UploadUserAvatar)
+		r.Post("/parent/users/{id}/avatar/remove", app.RemoveUserAvatar)
 		r.Post("/parent/users/{id}/remove", app.RemoveUser)
 
 		r.Post("/parent/calendar-accounts", app.CreateCalendarAccount)

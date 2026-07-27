@@ -46,6 +46,10 @@ hhq:
     # Keys expected: ENCRYPTION_KEY (required), and optionally
     # BOOTSTRAP_PARENT_NAME / BOOTSTRAP_PARENT_EMAIL / BOOTSTRAP_PARENT_PASSWORD
     # (only used on first startup, before any parent user exists).
+    # BOOTSTRAP_PARENT_AVATAR_FILE can also be set here (a path, not secret
+    # data itself) to give that first parent an avatar - point it at a file
+    # mounted via bootstrap.extraMounts below, the same way a calendars.json
+    # entry's password_file works.
     app: hhq-app-secrets
     # Keys expected: SMTP_HOST, SMTP_USER, SMTP_PASSWORD.
     smtp: hhq-smtp
@@ -78,6 +82,7 @@ bootstrap:
   #   - name: Alex
   #   - name: Sam
   #     color: "#3B82F6"
+  #     avatar_file: /secrets/avatars/sam.jpg   # see extraMounts below
 
   # List of {name, description} - see ChoreBootstrap.
   chores: []
@@ -141,6 +146,14 @@ bootstrap:
   #       - key: dad-icloud-password
   #         path: dad-icloud-password
   #     readOnly: true   # default true
+  #   # Avatar images (for children.json's avatar_file or
+  #   # BOOTSTRAP_PARENT_AVATAR_FILE above) work the same way - they're not
+  #   # secret, but Secrets are the only volume source extraMounts supports
+  #   # today, and `kubectl create secret generic hhq-avatars --from-file=...`
+  #   # handles the binary-to-base64 encoding for you.
+  #   - name: avatars
+  #     secretName: hhq-avatars
+  #     mountPath: /secrets/avatars
 
 # Standard Kubernetes Ingress. Independent of httpRoute below - enable
 # whichever matches your ingress controller.

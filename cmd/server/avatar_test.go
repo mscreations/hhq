@@ -73,7 +73,7 @@ func (ts *testServer) postAvatarUpload(t *testing.T, id int, csrfToken string, f
 	return resp
 }
 
-func TestUploadChildAvatarShowsOnDashboardAndKiosk(t *testing.T) {
+func TestUploadUserAvatarShowsOnDashboardAndKiosk(t *testing.T) {
 	ts := newTestServer(t)
 	csrfToken := ts.login(t, "avatar-upload@example.com", "s3cret-password")
 
@@ -122,7 +122,7 @@ func TestUploadChildAvatarShowsOnDashboardAndKiosk(t *testing.T) {
 	}
 }
 
-func TestUploadChildAvatarRejectsNonImage(t *testing.T) {
+func TestUploadUserAvatarRejectsNonImage(t *testing.T) {
 	ts := newTestServer(t)
 	csrfToken := ts.login(t, "avatar-reject@example.com", "s3cret-password")
 
@@ -153,7 +153,7 @@ func TestUploadChildAvatarRejectsNonImage(t *testing.T) {
 	}
 }
 
-func TestRemoveChildAvatarFallsBackToColor(t *testing.T) {
+func TestRemoveUserAvatarFallsBackToColor(t *testing.T) {
 	ts := newTestServer(t)
 	csrfToken := ts.login(t, "avatar-remove@example.com", "s3cret-password")
 

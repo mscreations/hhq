@@ -91,7 +91,7 @@ func (a *App) BootstrapChildren(ctx context.Context, entries []config.ChildBoots
 		}
 
 		if e.AvatarFile != "" {
-			if err := a.applyChildAvatarFile(ctx, childID, e.AvatarFile); err != nil {
+			if err := a.applyUserAvatarFile(ctx, childID, e.AvatarFile); err != nil {
 				logging.Errorf("bootstrap: applying avatar_file for child %q (id=%d): %v", e.Name, childID, err)
 			}
 		}

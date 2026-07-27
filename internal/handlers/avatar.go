@@ -49,10 +49,11 @@ const maxAvatarBytes = 2 << 20 // 2 MiB
 const maxAvatarDimension = 4096
 
 // validateAvatarBytes is the single validation path shared by the
-// interactive upload handler (UploadChildAvatar) and BootstrapChildren's
-// avatar_file reconciliation, so the two can never accept different sets of
-// images. Callers are responsible for enforcing maxAvatarBytes on the raw
-// size before calling this. Returns the sniffed content type on success.
+// interactive upload handler (UploadUserAvatar) and every avatar_file
+// reconciliation (BootstrapChildren, bootstrapFirstParent), so all of them
+// can never accept different sets of images. Callers are responsible for
+// enforcing maxAvatarBytes on the raw size before calling this. Returns the
+// sniffed content type on success.
 func validateAvatarBytes(data []byte) (contentType string, err error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("empty file")
@@ -103,14 +104,15 @@ func (a *App) ServeAvatar(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", updatedAt, bytes.NewReader(data))
 }
 
-// UploadChildAvatar handles the dashboard's per-child avatar upload form
-// (multipart/form-data, field "avatar"). Allowed regardless of
-// BootstrapManaged - unlike name/color, avatars have no children.json
-// equivalent for a dashboard-created child to conflict with, and for a
-// bootstrap-managed child with avatar_file configured, the next
+// UploadUserAvatar handles the dashboard's per-user avatar upload form
+// (multipart/form-data, field "avatar") - shared by both the Children and
+// Parents cards (route is /parent/users/{id}/avatar, not scoped to a role).
+// Allowed regardless of BootstrapManaged - unlike name/color, avatars have no
+// children.json equivalent for a dashboard-created child to conflict with,
+// and for a bootstrap-managed child with avatar_file configured, the next
 // BootstrapChildren reconcile pass simply overwrites this again (the
 // confirmed, expected "config wins on restart" behavior).
-func (a *App) UploadChildAvatar(w http.ResponseWriter, r *http.Request) {
+func (a *App) UploadUserAvatar(w http.ResponseWriter, r *http.Request) {
 	id, err := parseInt(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -166,10 +168,10 @@ func (a *App) UploadChildAvatar(w http.ResponseWriter, r *http.Request) {
 	a.respondAfterMutation(w, r, successFragment)
 }
 
-// RemoveChildAvatar clears a user's avatar, falling back to their color
+// RemoveUserAvatar clears a user's avatar, falling back to their color
 // swatch everywhere it's displayed. Allowed regardless of BootstrapManaged,
-// same rationale as UploadChildAvatar.
-func (a *App) RemoveChildAvatar(w http.ResponseWriter, r *http.Request) {
+// same rationale as UploadUserAvatar.
+func (a *App) RemoveUserAvatar(w http.ResponseWriter, r *http.Request) {
 	id, err := parseInt(chi.URLParam(r, "id"))
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
@@ -196,14 +198,23 @@ func (a *App) RemoveChildAvatar(w http.ResponseWriter, r *http.Request) {
 	a.respondAfterMutation(w, r, successFragment)
 }
 
-// applyChildAvatarFile is BootstrapChildren's counterpart to
-// UploadChildAvatar for a children.json entry's avatar_file field: reads and
-// validates the file the same way an interactive upload is validated, then
-// only calls Users.SetAvatar if the file's contents actually changed since
-// the last reconcile pass (compared via sha256 checksum) - this avoids
-// rewriting the row and bumping avatar_updated_at (which cache-busts the
-// served image's URL) on every single startup when nothing changed.
-func (a *App) applyChildAvatarFile(ctx context.Context, childID int, avatarFile string) error {
+// applyUserAvatarFile is BootstrapChildren's counterpart to
+// UploadUserAvatar for a children.json entry's avatar_file field. It's also
+// reused directly (as ApplyUserAvatarFile) by bootstrapFirstParent in
+// cmd/server/main.go for BOOTSTRAP_PARENT_AVATAR_FILE, since that bootstrap
+// path only has a *models.UserStore in hand, not a full *App.
+func (a *App) applyUserAvatarFile(ctx context.Context, userID int, avatarFile string) error {
+	return ApplyUserAvatarFile(ctx, a.Users, userID, avatarFile)
+}
+
+// ApplyUserAvatarFile reads and validates avatarFile the same way an
+// interactive upload is validated, then only calls Users.SetAvatar if the
+// file's contents actually changed since the last reconcile pass (compared
+// via sha256 checksum) - this avoids rewriting the row and bumping
+// avatar_updated_at (which cache-busts the served image's URL) on every
+// single startup when nothing changed. avatarFile is resolved relative to
+// CONFIG_DIR unless absolute.
+func ApplyUserAvatarFile(ctx context.Context, users *models.UserStore, userID int, avatarFile string) error {
 	path := avatarFile
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(config.ConfigDir(), path)
@@ -222,7 +233,7 @@ func (a *App) applyChildAvatarFile(ctx context.Context, childID int, avatarFile 
 
 	sum := sha256.Sum256(data)
 	checksum := hex.EncodeToString(sum[:])
-	existingChecksum, ok, err := a.Users.GetAvatarChecksum(ctx, childID)
+	existingChecksum, ok, err := users.GetAvatarChecksum(ctx, userID)
 	if err != nil {
 		return err
 	}
@@ -230,7 +241,7 @@ func (a *App) applyChildAvatarFile(ctx context.Context, childID int, avatarFile 
 		return nil // unchanged since the last reconcile pass
 	}
 
-	return a.Users.SetAvatar(ctx, childID, data, contentType)
+	return users.SetAvatar(ctx, userID, data, contentType)
 }
 
 // respondChildrenError is respondParentsError's counterpart for the

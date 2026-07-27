@@ -266,3 +266,68 @@ func TestBootstrapFirstParentDefaultsNameWhenUnset(t *testing.T) {
 		t.Fatalf("parents = %+v, want the default name %q", parents, "Parent")
 	}
 }
+
+// TestBootstrapFirstParentAppliesAvatarFile covers BOOTSTRAP_PARENT_AVATAR_FILE
+// being applied to the freshly-created initial parent, via the same
+// handlers.ApplyUserAvatarFile helper BootstrapChildren's avatar_file uses.
+func TestBootstrapFirstParentAppliesAvatarFile(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	users := &models.UserStore{DB: conn}
+	ctx := t.Context()
+
+	path := filepath.Join(t.TempDir(), "parent-avatar.png")
+	if err := os.WriteFile(path, tinyPNGAvatar, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("BOOTSTRAP_PARENT_EMAIL", "bootstrap-avatar@example.com")
+	t.Setenv("BOOTSTRAP_PARENT_PASSWORD", "some-password")
+	t.Setenv("BOOTSTRAP_PARENT_AVATAR_FILE", path)
+
+	if err := bootstrapFirstParent(ctx, users); err != nil {
+		t.Fatalf("bootstrapFirstParent: %v", err)
+	}
+
+	parent, err := users.GetByEmail(ctx, "bootstrap-avatar@example.com")
+	if err != nil {
+		t.Fatalf("GetByEmail: %v", err)
+	}
+	if !parent.HasAvatar {
+		t.Fatal("expected BOOTSTRAP_PARENT_AVATAR_FILE to be applied to the newly-created parent")
+	}
+}
+
+// TestBootstrapFirstParentSkipsAvatarFileWhenAlreadyAParent covers
+// BOOTSTRAP_PARENT_AVATAR_FILE being ignored (like the rest of
+// bootstrapFirstParent) once a parent already exists - the env var should
+// never retroactively change an existing parent's avatar.
+func TestBootstrapFirstParentSkipsAvatarFileWhenAlreadyAParent(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	users := &models.UserStore{DB: conn}
+	ctx := t.Context()
+
+	if _, err := users.CreateParent(ctx, "Existing", "existing-avatar@example.com", "hash"); err != nil {
+		t.Fatalf("CreateParent: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "parent-avatar.png")
+	if err := os.WriteFile(path, tinyPNGAvatar, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	t.Setenv("BOOTSTRAP_PARENT_EMAIL", "bootstrap-avatar2@example.com")
+	t.Setenv("BOOTSTRAP_PARENT_PASSWORD", "some-password")
+	t.Setenv("BOOTSTRAP_PARENT_AVATAR_FILE", path)
+
+	if err := bootstrapFirstParent(ctx, users); err != nil {
+		t.Fatalf("bootstrapFirstParent: %v", err)
+	}
+
+	existing, err := users.GetByEmail(ctx, "existing-avatar@example.com")
+	if err != nil {
+		t.Fatalf("GetByEmail: %v", err)
+	}
+	if existing.HasAvatar {
+		t.Fatal("expected the pre-existing parent's avatar to be untouched")
+	}
+}

@@ -78,7 +78,14 @@ There are two ways to create the first parent account - use whichever's convenie
 
 - **`BOOTSTRAP_PARENT_NAME`/`_EMAIL`/`_PASSWORD` env vars**: if set, the app
   creates that parent automatically on startup, as long as no parent exists
-  yet. Remove those keys afterward (it's a no-op once any parent exists).
+  yet. Remove those keys afterward (it's a no-op once any parent exists). An
+  optional `BOOTSTRAP_PARENT_AVATAR_FILE` env var (a path to a PNG/JPEG/GIF,
+  same 2 MB/4096x4096px limits as `children.json`'s `avatar_file`, resolved
+  relative to `CONFIG_DIR` unless absolute) sets that parent's avatar at the
+  same time - unlike `avatar_file`, this only applies once, at the moment the
+  initial parent is created, since there's no ongoing bootstrap file for
+  parents to reconcile against on every restart; a photo uploaded later from
+  the dashboard is never overwritten.
 - **The `/setup` page**: if you'd rather not put a password in an env var,
   leave the bootstrap vars unset and visit `/setup` in a browser instead -
   it shows a "create the initial account" form, and self-disables (redirects
@@ -402,6 +409,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `CALENDAR_WINDOW_DAYS` | no (default 7) | How many days ahead the kiosk calendar shows |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | no | OAuth 2.0 Client credentials from a Google Cloud project with the Calendar API enabled. If either is unset, the "Connect Google Calendar" option is hidden from the parent dashboard - Fastmail/iCloud continue to work without these. |
 | `BOOTSTRAP_PARENT_NAME/EMAIL/PASSWORD` | no (alternative: use the `/setup` page) | Creates the initial parent login on startup |
+| `BOOTSTRAP_PARENT_AVATAR_FILE` | no | Path to a PNG/JPEG/GIF (max 2 MB) applied as the initial parent's avatar, once, when it's created - see "Add your first parent" above |
 | `CONFIG_DIR` | no (default `/config`) | Directory scanned on every startup for the optional bootstrap config files (`calendars.json`, `children.json`, `chores.json`, `assignments.json`, `plugins.json`) - see "Bootstrap config files" above |
 | `PLUGIN_SYNC_INTERVAL_MINUTES` | no (default 15) | How often registered plugins are polled for synthetic calendar events (see `plugins.json` above) |
 | `WEATHER_LOCATION` | no | Free-text place name (e.g. `Chicago, IL`) geocoded to seed the weather widget's location on first startup only - a location already set (by this or the parent dashboard) is never overwritten. Ignored if `WEATHER_LAT`/`WEATHER_LON` are both set. |
