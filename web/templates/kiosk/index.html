@@ -18,16 +18,31 @@
   </header>
 
   <main id="kiosk-view">
-    {{template "kiosk/_home" .}}
+    {{if .HomeIsWeek}}{{template "kiosk/_week" .Home}}{{else}}{{template "kiosk/_home" .Home}}{{end}}
   </main>
 
   <nav class="kiosk-navbar">
     <button type="button" class="nav-btn active" data-nav="home"
-            hx-get="/kiosk/fragments/home" hx-target="#kiosk-view" hx-swap="innerHTML"
+            hx-get="{{if .HomeIsWeek}}/kiosk/fragments/week{{else}}/kiosk/fragments/home{{end}}" hx-target="#kiosk-view" hx-swap="innerHTML"
             hx-on::before-request="setActiveNav('home')">
       <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="nav-home-roof" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fb7185"/><stop offset="100%" stop-color="#dc2626"/></linearGradient><linearGradient id="nav-home-wall" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#7dd3fc"/><stop offset="100%" stop-color="#0284c7"/></linearGradient><linearGradient id="nav-home-door" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fde68a"/><stop offset="100%" stop-color="#d97706"/></linearGradient></defs><path d="M12 3.2 3 11h18z" fill="url(#nav-home-roof)"/><path d="M5.5 11H10v9H5.5z" fill="url(#nav-home-wall)"/><path d="M14 11h4.5v9H14z" fill="url(#nav-home-wall)"/><rect x="10" y="14" width="4" height="6" fill="url(#nav-home-door)"/></svg>
       <span>Home</span>
     </button>
+    {{if .HomeIsWeek}}
+    <button type="button" class="nav-btn" data-nav="agenda"
+            hx-get="/kiosk/fragments/home" hx-target="#kiosk-view" hx-swap="innerHTML"
+            hx-on::before-request="setActiveNav('agenda')">
+      {{template "kiosk/_nav_agenda_icon"}}
+      <span>Agenda</span>
+    </button>
+    {{else}}
+    <button type="button" class="nav-btn" data-nav="calendars"
+            hx-get="/kiosk/fragments/week" hx-target="#kiosk-view" hx-swap="innerHTML"
+            hx-on::before-request="setActiveNav('calendars')">
+      {{template "kiosk/_nav_calendars_icon"}}
+      <span>Calendars</span>
+    </button>
+    {{end}}
     <button type="button" class="nav-btn" data-nav="weather"
             hx-get="/kiosk/weather/page" hx-target="#kiosk-view" hx-swap="innerHTML"
             hx-on::before-request="setActiveNav('weather')">

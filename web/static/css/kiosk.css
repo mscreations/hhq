@@ -254,6 +254,190 @@ body {
 
 .empty-state { color: var(--text-dim); font-style: italic; }
 
+/* --- 5-day view ---
+   A single shared CSS Grid (hour axis + 5 day columns x 4 rows: heading/
+   chores/all-day/track) rather than 6 independent boxes next to a
+   separately-guessed axis column. CSS Grid auto-sizes every row to the
+   tallest cell IN THAT ROW ACROSS ALL COLUMNS, so every day's time track
+   (row 4) - and the hour-axis's labels, also row 4 - start at the exact
+   same Y regardless of how many chores a particular day has. A fixed-height
+   guess for the axis's spacer could never guarantee that once different
+   days had different chore counts, which previously caused the now-line to
+   visibly disagree with the hour labels next to it. */
+
+.kiosk-week {
+  height: 100%;
+  overflow: hidden; /* fixed mode: no scroll; full24 mode overrides below */
+}
+
+.kiosk-week[data-grid-mode="full24"] .week-grid-track {
+  overflow-y: auto; /* deliberate exception to the app's no-scroll rule, see requirement 4 */
+}
+
+.kiosk-week-grid {
+  display: grid;
+  grid-template-columns: 3.5vw repeat(5, 1fr);
+  grid-template-rows: auto auto auto 1fr;
+  gap: 0.6vw;
+  height: 100%;
+  min-height: 0;
+  padding: 1vh 1vw;
+}
+
+.week-axis-cell { min-height: 0; }
+
+.week-hour-axis {
+  position: relative;
+  min-height: 0;
+}
+
+.week-hour-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  font-size: 0.75vw;
+  color: var(--text-dim);
+  text-align: right;
+  padding-right: 0.4vw;
+}
+
+.week-day-heading {
+  position: relative;
+  font-size: 1vw;
+  color: var(--text);
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  padding: 0.6vh 0.5vw;
+  display: flex;
+  align-items: center;
+  /* .week-day-heading-label is taken out of flow (absolutely centered on
+     the heading as a whole, not centered within the remaining space after
+     the forecast), so this flex row only needs to push the forecast to the
+     far right edge. */
+  justify-content: flex-end;
+  min-height: 1.6vw;
+}
+
+.week-day-heading-today,
+.week-day-chores-cell-today,
+.week-allday-cell-today,
+.week-grid-track-today {
+  border-color: var(--gold);
+}
+
+.week-day-heading-label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+}
+
+/* Forecast icon + high temp pinned to the heading's right edge (with the
+   heading's own padding as margin), in every day heading except Today,
+   whose current conditions already appear in the header's own weather
+   widget. Both are shrunk to fit without crowding the centered label. */
+.week-day-heading-forecast {
+  display: flex;
+  align-items: center;
+  gap: 0.15vw;
+}
+
+.week-day-heading-forecast .weather-icon { width: 1vw; height: 1vw; }
+
+.week-day-heading-hitemp {
+  font-size: 0.7vw;
+  color: var(--text-dim);
+}
+
+.week-day-chores-cell {
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.week-chore-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.3vh 0.4vw;
+  max-height: 20vh;
+  overflow-y: auto;
+}
+
+.week-chore-list .chore-item { font-size: 0.8vw; padding: 0.5vh 0.5vw; margin-bottom: 0.3vh; }
+
+.week-allday-cell {
+  background: var(--panel-bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.week-allday-chip {
+  margin: 0.2vh 0.4vw;
+  padding: 0.2vh 0.4vw;
+  border-left: 4px solid #888;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  font-size: 0.75vw;
+  cursor: pointer;
+}
+
+.week-grid-track {
+  position: relative;
+  min-height: 0;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+  /* Decorative hour gridlines only - real event positioning is computed
+     server-side (weekEvent.TopPct/HeightPct), not tied to this line count. */
+  background-image: repeating-linear-gradient(to bottom, var(--border) 0, var(--border) 1px, transparent 1px, transparent calc(100% / 16));
+}
+
+.week-event-block {
+  position: absolute;
+  left: 2%;
+  width: 96%;
+  border-radius: 6px;
+  padding: 0.2vh 0.4vw;
+  overflow: hidden;
+  font-size: 0.75vw;
+  color: #0a0a0a;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+.week-event-clipped {
+  border: 2px dashed rgba(255, 255, 255, 0.6);
+}
+
+.now-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #ef4444;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.now-line::before {
+  content: "";
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
 .modal-backdrop {
   display: none;
   position: fixed;

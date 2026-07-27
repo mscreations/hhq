@@ -44,6 +44,34 @@
         {{end}}
       </select>
     </label>
+    <label>Kiosk Default Layout
+      <select name="kiosk_layout">
+        <option value="classic"{{if ne .KioskLayout "weekly"}} selected{{end}}>Classic (3-column)</option>
+        <option value="weekly"{{if eq .KioskLayout "weekly"}} selected{{end}}>5-Day Calendar</option>
+      </select>
+    </label>
+    <label>Calendar View Hours
+      <select name="kiosk_grid_mode">
+        <option value="fixed"{{if ne .KioskGridMode "full24"}} selected{{end}}>Fixed waking hours</option>
+        <option value="full24"{{if eq .KioskGridMode "full24"}} selected{{end}}>Full 24 hours (scrollable)</option>
+      </select>
+    </label>
+    <label>Calendar View Start Hour
+      <select name="kiosk_grid_start_hour">
+        {{$currentStart := .KioskGridStartHour}}
+        {{range $h := .Hours}}
+        <option value="{{$h}}"{{if eq $h $currentStart}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Calendar View End Hour
+      <select name="kiosk_grid_end_hour">
+        {{$currentEnd := .KioskGridEndHour}}
+        {{range $h := .Hours}}
+        <option value="{{$h}}"{{if eq $h $currentEnd}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+        {{end}}
+      </select>
+    </label>
     <div class="edit-actions">
       <button type="submit">Save</button>
     </div>

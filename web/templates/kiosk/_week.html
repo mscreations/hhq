@@ -1,0 +1,40 @@
+{{define "kiosk/_week"}}
+<div class="kiosk-week" data-grid-mode="{{.Grid.Mode}}" data-grid-start="{{.Grid.StartHour}}" data-grid-end="{{.Grid.EndHour}}"
+     hx-get="/kiosk/fragments/week" hx-trigger="every 60s, eventActionDone from:body" hx-target="this" hx-swap="innerHTML">
+  {{template "kiosk/_week_days" .}}
+</div>
+{{end}}
+
+{{/* A single shared CSS Grid (hour axis + 5 day columns, laid out row by
+     row: heading/chores/all-day/track) - not 6 independent per-day boxes
+     next to a separately-guessed axis column. CSS Grid auto-sizes every row
+     to the tallest cell IN THAT ROW ACROSS ALL COLUMNS, so each day's time
+     track (row 4) starts at the exact same Y as the hour-axis labels and
+     every other day's track, regardless of how many chores a particular day
+     has - a fixed guess at the axis's spacer height could never guarantee
+     that once different days had different chore counts, which is what
+     caused the now-line/hour-label misalignment this layout replaces. */}}
+{{define "kiosk/_week_days"}}
+<div class="kiosk-week-grid">
+  <div class="week-axis-cell"></div>
+  {{range .Days}}
+  <div class="week-day-heading{{if .IsToday}} week-day-heading-today{{end}}">
+    <span class="week-day-heading-label">{{.Label}}</span>
+    {{if .HasForecast}}
+    <span class="week-day-heading-forecast">{{template "kiosk/_weather_icon" .WeatherIcon}}<span class="week-day-heading-hitemp">{{printf "%.0f°" .WeatherHighTemp}}</span></span>
+    {{end}}
+  </div>
+  {{end}}
+
+  <div class="week-axis-cell"></div>
+  {{range .Days}}<div class="week-day-chores-cell{{if .IsToday}} week-day-chores-cell-today{{end}}">{{template "kiosk/_week_day_chores" .}}</div>{{end}}
+
+  <div class="week-axis-cell"></div>
+  {{range .Days}}{{template "kiosk/_week_day_allday" .}}{{end}}
+
+  <div class="week-hour-axis">
+    {{range .HourLabels}}<div class="week-hour-label" style="top: {{.TopPct}}%">{{.Label}}</div>{{end}}
+  </div>
+  {{range .Days}}{{template "kiosk/_week_day_track" .}}{{end}}
+</div>
+{{end}}

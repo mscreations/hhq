@@ -416,6 +416,7 @@ func buildRouter(app *handlers.App) http.Handler {
 	// --- Kiosk: unauthenticated, view-only + chore-tap-to-complete ---
 	r.Get("/", app.KioskIndex)
 	r.Get("/kiosk/fragments/home", app.KioskFragmentHome)
+	r.Get("/kiosk/fragments/week", app.KioskFragmentWeek)
 	r.Get("/kiosk/fragments/agenda", app.KioskFragmentAgenda)
 	r.Get("/kiosk/fragments/calendar", app.KioskFragmentCalendar)
 	r.Get("/kiosk/fragments/chores", app.KioskFragmentChores)
