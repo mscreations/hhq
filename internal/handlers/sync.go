@@ -196,8 +196,17 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		seen[e.Name] = true
-		if e.Name == "" || e.Username == "" || e.Password == "" {
-			logging.Errorf("bootstrap: skipping calendar account %q: name, username, and password are all required", e.Name)
+		if e.Name == "" || e.Username == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: name and username are required", e.Name)
+			continue
+		}
+		password, err := e.ResolvePassword()
+		if err != nil {
+			logging.Errorf("bootstrap: skipping calendar account %q: %v", e.Name, err)
+			continue
+		}
+		if password == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: password or password_file is required", e.Name)
 			continue
 		}
 		provider, err := config.ResolveProvider(e.Provider)
@@ -210,7 +219,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 			logging.Errorf("bootstrap: skipping calendar account %q: provider %q requires an explicit url", e.Name, provider)
 			continue
 		}
-		encrypted, err := a.Encryptor.Encrypt(e.Password)
+		encrypted, err := a.Encryptor.Encrypt(password)
 		if err != nil {
 			logging.Errorf("bootstrap: encrypting password for calendar account %q: %v", e.Name, err)
 			continue

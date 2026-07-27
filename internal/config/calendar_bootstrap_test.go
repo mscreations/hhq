@@ -16,6 +16,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mscreations/hhq/internal/models"
@@ -55,6 +57,57 @@ func TestParseCalendarAccountsBootstrapEmptyArray(t *testing.T) {
 func TestParseCalendarAccountsBootstrapInvalidJSON(t *testing.T) {
 	if _, err := ParseCalendarAccountsBootstrap(`not json`); err == nil {
 		t.Fatal("expected an error for invalid JSON")
+	}
+}
+
+func TestResolvePasswordUsesPasswordWhenSet(t *testing.T) {
+	e := CalendarAccountBootstrap{Password: "app-pass"}
+	got, err := e.ResolvePassword()
+	if err != nil {
+		t.Fatalf("ResolvePassword: %v", err)
+	}
+	if got != "app-pass" {
+		t.Fatalf("ResolvePassword() = %q, want %q", got, "app-pass")
+	}
+}
+
+func TestResolvePasswordReadsAndTrimsPasswordFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "password")
+	if err := os.WriteFile(path, []byte("app-pass\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	e := CalendarAccountBootstrap{PasswordFile: path}
+	got, err := e.ResolvePassword()
+	if err != nil {
+		t.Fatalf("ResolvePassword: %v", err)
+	}
+	if got != "app-pass" {
+		t.Fatalf("ResolvePassword() = %q, want %q", got, "app-pass")
+	}
+}
+
+func TestResolvePasswordRejectsBothSet(t *testing.T) {
+	e := CalendarAccountBootstrap{Password: "app-pass", PasswordFile: "/some/path"}
+	if _, err := e.ResolvePassword(); err == nil {
+		t.Fatal("expected an error when both password and password_file are set")
+	}
+}
+
+func TestResolvePasswordErrorsOnUnreadableFile(t *testing.T) {
+	e := CalendarAccountBootstrap{PasswordFile: filepath.Join(t.TempDir(), "does-not-exist")}
+	if _, err := e.ResolvePassword(); err == nil {
+		t.Fatal("expected an error for a missing password_file")
+	}
+}
+
+func TestResolvePasswordEmptyWhenNeitherSet(t *testing.T) {
+	e := CalendarAccountBootstrap{}
+	got, err := e.ResolvePassword()
+	if err != nil {
+		t.Fatalf("ResolvePassword: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("ResolvePassword() = %q, want empty", got)
 	}
 }
 
