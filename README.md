@@ -409,6 +409,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `WEATHER_UNITS` | no (default `imperial`) | `imperial` or `metric`, used only when seeding the location via the variables above |
 | `WEATHER_REFRESH_INTERVAL_MINUTES` | no (default 15) | How often the weather widget's forecast is refreshed from Open-Meteo |
 | `LOG_LEVEL` | no (default `info`) | Set to `debug` for verbose logs: calendar sync detail (principal/home-set discovery, event counts per calendar), email send attempts, per-request logging, chore state transitions, etc. |
+| `LOG_FORMAT` | no (default `text`) | Set to `json` to emit one JSON object per log line (`time`/`level`/`msg`) instead of the default `[LEVEL] message` text format - useful when logs are ingested by an aggregator like Loki/Grafana. |
 | `RELEASE_CHECK_INTERVAL_MINUTES` | no (default 1440) | How often the app polls GitHub for a newer release, to drive the "Update Available" badge on the parent dashboard |
 
 ## Known limitations & next steps

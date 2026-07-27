@@ -136,7 +136,7 @@ spec:
           image: "{{ .image.repository }}:{{ .image.tag }}"
           imagePullPolicy: {{ .image.pullPolicy | default "IfNotPresent" }}
           ports:
-            - name: http
+            - name: {{ include "hhq.pluginPortName" .name }}
               containerPort: {{ .port }}
           env:
             - name: LISTEN_ADDR
@@ -219,13 +219,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: {{ include "hhq.pluginPortName" .name }}
             initialDelaySeconds: 5
             periodSeconds: 15
           readinessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: {{ include "hhq.pluginPortName" .name }}
             initialDelaySeconds: 5
             periodSeconds: 10
           volumeMounts:
