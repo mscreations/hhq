@@ -24,6 +24,12 @@ Service - check `kubectl logs` with `-c <plugin-name>` if one isn't
 starting correctly.
 {{- end }}
 
+Versions installed:
+HHQ: {{ .Values.hhq.image.tag }}
+{{- range .Values.plugins }}
+{{ .name }}: {{ .image.tag }}
+{{- end }}
+
 Before this pod becomes healthy, make sure these existing Secrets are
 present in {{ .Release.Namespace }}:
   - {{ .Values.hhq.existingSecrets.app }} (ENCRYPTION_KEY, ...)
