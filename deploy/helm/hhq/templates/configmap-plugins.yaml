@@ -1,0 +1,39 @@
+{{- if .Values.plugins }}
+# Auto-generated plugins.json, derived from .Values.plugins - each plugin
+# sidecar is reachable by hhq at http://localhost:<port> since they share
+# this pod's network namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hhq.fullname" . }}-plugins
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hhq.labels" . | nindent 4 }}
+data:
+  plugins.json: |
+    {{- $entries := list }}
+    {{- range .Values.plugins }}
+    {{- $entries = append $entries (dict "id" .name "name" (.displayName | default .name) "base_url" (printf "http://localhost:%v" .port) "enabled" true) }}
+    {{- end }}
+    {{- toJson $entries | nindent 4 }}
+{{- range .Values.plugins }}
+{{- if .bootstrapFiles }}
+---
+# Bootstrap files for the "{{ .name }}" plugin (non-secret convenience
+# data - e.g. bill amounts, not credentials). Mounted at this plugin's own
+# CONFIG_DIR subdirectory so it can't collide with hhq's or another
+# plugin's bootstrap files.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hhq.fullname" $ }}-plugin-{{ .name }}-bootstrap
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "hhq.labels" $ | nindent 4 }}
+data:
+  {{- range $file, $content := .bootstrapFiles }}
+  {{ $file }}: {{ $content | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

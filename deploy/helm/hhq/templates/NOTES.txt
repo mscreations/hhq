@@ -1,0 +1,34 @@
+HappyHome Quest (hhq) has been deployed as "{{ include "hhq.fullname" . }}" in namespace {{ .Release.Namespace }}.
+
+{{- if .Values.ingress.enabled }}
+
+Ingress is enabled - it should be reachable at:
+  http://{{ .Values.ingress.host }}
+{{- end }}
+{{- if .Values.httpRoute.enabled }}
+
+An HTTPRoute has been created for hostnames: {{ .Values.httpRoute.hostnames | join ", " }}
+{{- end }}
+{{- if not (or .Values.ingress.enabled .Values.httpRoute.enabled) }}
+
+No ingress.enabled or httpRoute.enabled is set - hhq is only reachable
+in-cluster via the Service:
+  {{ include "hhq.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}
+
+{{- if .Values.plugins }}
+
+Plugin sidecars running in this pod: {{ range .Values.plugins }}{{ .name }} {{ end }}
+Each is reachable by hhq at http://localhost:<port> and has no separate
+Service - check `kubectl logs` with `-c <plugin-name>` if one isn't
+starting correctly.
+{{- end }}
+
+Before this pod becomes healthy, make sure these existing Secrets are
+present in {{ .Release.Namespace }}:
+  - {{ .Values.hhq.existingSecrets.app }} (ENCRYPTION_KEY, ...)
+  - {{ .Values.hhq.existingSecrets.smtp }} (SMTP_HOST/USER/PASSWORD)
+  - {{ .Values.hhq.existingSecrets.db }} (host/port/dbname/user/password)
+{{- range .Values.bootstrap.extraMounts }}
+  - {{ .secretName }} (mounted at {{ .mountPath }}, e.g. calendar password_file entries)
+{{- end }}

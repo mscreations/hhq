@@ -143,8 +143,7 @@ you know you need a different value.
 
 Alternatively, bootstrap any number of accounts (0, 1, or many) automatically
 on startup by mounting a `calendars.json` file into the directory named by
-`CONFIG_DIR` (default `/config` - see "Bootstrap config files" below), e.g.
-from a Kubernetes Secret since it holds plaintext app passwords:
+`CONFIG_DIR` (default `/config` - see "Bootstrap config files" below):
 
 ```json
 [
@@ -159,10 +158,18 @@ from a Kubernetes Secret since it holds plaintext app passwords:
     "provider": "generic",
     "url": "https://caldav.example.com/",
     "username": "someuser",
-    "password": "app-specific-password"
+    "password_file": "/secrets/caldav/someuser-password"
   }
 ]
 ```
+
+Each entry's password can be given either as `password` (a plain string) or
+as `password_file` (a path to a file containing just the password, e.g. a
+Kubernetes Secret mounted separately from `calendars.json` itself) - setting
+both on the same entry is a startup-time bootstrap error for that entry only
+(the rest of the file still applies). Using `password_file` means
+`calendars.json` holds no secret material, so it can live in a plain
+ConfigMap instead of needing to be a Secret itself.
 
 `provider` accepts `fastmail`, `icloud`, or `generic` (the CalDAV root URL is
 pre-filled for the first two, same as the dashboard form; `generic` requires
@@ -380,6 +387,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 
 | Variable | Required | Purpose |
 |---|---|---|
+| `LISTEN_ADDR` | no (default `:8080`) | Address/port the HTTP server binds to |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | yes | Postgres connection (sourced from the CNPG secret in k8s) |
 | `DB_SSLMODE` | no (default `disable`) | Postgres SSL mode |
 | `ENCRYPTION_KEY` | yes | See secret generation above |
@@ -398,6 +406,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `WEATHER_LOCATION` | no | Free-text place name (e.g. `Chicago, IL`) geocoded to seed the weather widget's location on first startup only - a location already set (by this or the parent dashboard) is never overwritten. Ignored if `WEATHER_LAT`/`WEATHER_LON` are both set. |
 | `WEATHER_LAT`, `WEATHER_LON` | no | Explicit coordinates to seed the weather location on first startup only, skipping geocoding. If `WEATHER_LOCATION` is also set, it's used only as the display name. |
 | `WEATHER_UNITS` | no (default `imperial`) | `imperial` or `metric`, used only when seeding the location via the variables above |
+| `WEATHER_REFRESH_INTERVAL_MINUTES` | no (default 15) | How often the weather widget's forecast is refreshed from Open-Meteo |
 | `LOG_LEVEL` | no (default `info`) | Set to `debug` for verbose logs: calendar sync detail (principal/home-set discovery, event counts per calendar), email send attempts, per-request logging, chore state transitions, etc. |
 | `RELEASE_CHECK_INTERVAL_MINUTES` | no (default 1440) | How often the app polls GitHub for a newer release, to drive the "Update Available" badge on the parent dashboard |
 

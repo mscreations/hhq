@@ -1,0 +1,16 @@
+# Only hhq gets a Service. Plugin sidecar containers are reachable by hhq
+# over localhost within the same pod and are never exposed separately.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hhq.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hhq.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "hhq.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.hhq.service.port }}
+      targetPort: http

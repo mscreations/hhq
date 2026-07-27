@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hhq
+description: HappyHome Quest - family calendar & chore tracker kiosk, with optional plugin sidecars
+type: application
+version: 0.1.0
+appVersion: "latest"
