@@ -366,6 +366,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          app.Plugins,
 		Release:          releaseCache,
+		Version:          Version,
 	}
 
 	logging.Debugf("starting background scheduler (calendar sync every %s, chore generation, session cleanup, weekly report)", cfg.CalendarSyncInterval)
