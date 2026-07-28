@@ -306,8 +306,48 @@ func (a *App) refreshPluginManifest(ctx context.Context, id, baseURL, token stri
 			logging.Errorf("plugin %q: provisioning synthetic calendar: %v", id, err)
 			return false
 		}
+		// A manifest refresh can be the first time a plugin's synthetic
+		// calendar exists (ensurePluginCalendar just created it above) or can
+		// follow a period where the plugin was unreachable - either way,
+		// don't leave its events stale until the scheduler's next periodic
+		// tick (s.Cfg.PluginSyncInterval, potentially many minutes away);
+		// sync it now. Runs on the calling goroutine deliberately (matching
+		// the FetchManifest call above, which already blocks this same
+		// function on network I/O) rather than in a detached goroutine - a
+		// detached sync would race PruneStale against anything else that
+		// touches the plugin's synthetic calendar immediately after
+		// bootstrap/registration returns.
+		a.syncPluginEvents(ctx, id)
 	}
 	return true
+}
+
+// syncPluginEvents fetches plugin id's current synthetic events via the same
+// plugins.SyncOne routine the scheduler's periodic pass and the dashboard's
+// "Resync Now" button use (see internal/handlers/sync.go's syncPluginAccount
+// and internal/scheduler/plugin_sync.go's syncAllPlugins) - called right
+// after refreshPluginManifest confirms the plugin's synthetic calendar is
+// provisioned, so a freshly (re)registered plugin's events show up on the
+// kiosk immediately instead of waiting for the next scheduled sync.
+func (a *App) syncPluginEvents(ctx context.Context, id string) {
+	plugin, err := a.Plugins.GetByID(ctx, id)
+	if err != nil {
+		logging.Errorf("plugin %q: loading before post-refresh event sync: %v", id, err)
+		return
+	}
+
+	sc := plugins.SyncContext{
+		Plugins:          a.Plugins,
+		Calendars:        a.Calendars,
+		Events:           a.Events,
+		CalendarAccounts: a.CalendarAccounts,
+		Encryptor:        a.Encryptor,
+	}
+	if err := sc.SyncOne(ctx, *plugin, a.Cfg.CalendarWindowDays); err != nil {
+		logging.Errorf("plugin %q: post-refresh event sync failed: %v", id, err)
+	} else {
+		logging.Infof("plugin %q: post-refresh event sync succeeded", id)
+	}
 }
 
 // ensurePluginCalendar auto-creates a dedicated calendar_accounts/calendars
