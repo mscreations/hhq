@@ -107,7 +107,7 @@ type jsonEntry struct {
 func write(level Level, msg string) {
 	if format == FormatJSON {
 		b, err := json.Marshal(jsonEntry{
-			Time:  time.Now().UTC().Format(time.RFC3339Nano),
+			Time:  time.Now().Format(time.RFC3339Nano),
 			Level: level.String(),
 			Msg:   msg,
 		})

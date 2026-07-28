@@ -111,6 +111,7 @@ func FetchForecast(ctx context.Context, lat, lon float64, units Units) (*Forecas
 	q.Set("precipitation_unit", precipUnit)
 	q.Set("wind_speed_unit", windUnit)
 	q.Set("timeformat", "iso8601")
+	q.Set("timezone", "auto")
 	q.Set("forecast_days", "7")
 	req.URL.RawQuery = q.Encode()
 
@@ -142,7 +143,7 @@ func buildForecast(parsed *openMeteoResponse) *Forecast {
 	now := time.Now()
 	hourCount := len(parsed.Hourly.Time)
 	for i := 0; i < hourCount && len(f.Hourly) < 12; i++ {
-		t, err := time.Parse("2006-01-02T15:04", parsed.Hourly.Time[i])
+		t, err := time.ParseInLocation("2006-01-02T15:04", parsed.Hourly.Time[i], time.Local)
 		if err != nil || t.Before(now) {
 			continue
 		}
@@ -156,7 +157,7 @@ func buildForecast(parsed *openMeteoResponse) *Forecast {
 
 	dayCount := len(parsed.Daily.Time)
 	for i := 0; i < dayCount; i++ {
-		d, err := time.Parse("2006-01-02", parsed.Daily.Time[i])
+		d, err := time.ParseInLocation("2006-01-02", parsed.Daily.Time[i], time.Local)
 		if err != nil {
 			continue
 		}
