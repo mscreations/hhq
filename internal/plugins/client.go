@@ -57,6 +57,9 @@ func FetchView(ctx context.Context, baseURL, token string) (string, error) {
 		return "", fmt.Errorf("fetching view: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("fetching view: %w", ErrForbidden)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fetching view: unexpected status %d", resp.StatusCode)
 	}
@@ -119,6 +122,9 @@ func FetchEvents(ctx context.Context, baseURL, token string, from, to time.Time)
 		return nil, fmt.Errorf("fetching events: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("fetching events: %w", ErrForbidden)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching events: unexpected status %d", resp.StatusCode)
 	}
@@ -163,6 +169,9 @@ func PostAction(ctx context.Context, baseURL, token, actionID, uid string) error
 		return fmt.Errorf("posting action %s: %w", actionID, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("posting action %s: %w", actionID, ErrForbidden)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("posting action %s: unexpected status %d", actionID, resp.StatusCode)
 	}

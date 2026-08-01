@@ -170,6 +170,7 @@ func (a *App) syncPluginAccount(ctx context.Context, account *models.CalendarAcc
 		Events:           a.Events,
 		CalendarAccounts: a.CalendarAccounts,
 		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
 	}
 	if err := sc.SyncOne(ctx, *plugin, a.Cfg.CalendarWindowDays); err != nil {
 		logging.Errorf("on-demand sync: plugin %q failed: %v", plugin.ID, err)

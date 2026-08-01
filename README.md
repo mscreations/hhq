@@ -412,6 +412,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `BOOTSTRAP_PARENT_AVATAR_FILE` | no | Path to a PNG/JPEG/GIF (max 2 MB) applied as the initial parent's avatar, once, when it's created - see "Add your first parent" above |
 | `CONFIG_DIR` | no (default `/config`) | Directory scanned on every startup for the optional bootstrap config files (`calendars.json`, `children.json`, `chores.json`, `assignments.json`, `plugins.json`) - see "Bootstrap config files" above |
 | `PLUGIN_SYNC_INTERVAL_MINUTES` | no (default 15) | How often registered plugins are polled for synthetic calendar events (see `plugins.json` above) |
+| `PLUGIN_CONNECTION_SECRET` | no (default `hhq-plugin-connection`) | Shared secret hhq presents to a plugin's `POST /register` (see `PLUGINS.md`'s "Authentication: self-registration") - set the same value on both hhq and the plugin if you want a real, hand-generated secret instead of the shared default |
 | `WEATHER_LOCATION` | no | Free-text place name (e.g. `Chicago, IL`) geocoded to seed the weather widget's location on first startup only - a location already set (by this or the parent dashboard) is never overwritten. Ignored if `WEATHER_LAT`/`WEATHER_LON` are both set. |
 | `WEATHER_LAT`, `WEATHER_LON` | no | Explicit coordinates to seed the weather location on first startup only, skipping geocoding. If `WEATHER_LOCATION` is also set, it's used only as the display name. |
 | `WEATHER_UNITS` | no (default `imperial`) | `imperial` or `metric`, used only when seeding the location via the variables above |

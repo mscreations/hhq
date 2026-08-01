@@ -18,6 +18,7 @@ package plugins
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/mscreations/hhq/internal/models"
@@ -36,6 +37,11 @@ type SyncContext struct {
 	Events           *models.EventStore
 	CalendarAccounts *models.CalendarAccountStore
 	Encryptor        *util.Encryptor
+	// ConnectionSecret is the shared secret presented to a plugin's
+	// POST /register (see config.Config.PluginConnectionSecret) - used to
+	// re-register once, in place, if FetchEvents comes back 403 (the stored
+	// token no longer matches what the plugin has on record).
+	ConnectionSecret string
 }
 
 // SyncOne fetches p's synthetic events for [today, today+windowDays) and
@@ -68,6 +74,15 @@ func (sc SyncContext) SyncOne(ctx context.Context, p models.Plugin, windowDays i
 	}
 
 	events, err := FetchEvents(ctx, p.BaseURL, token, from, to)
+	if errors.Is(err, ErrForbidden) {
+		// The stored token no longer matches what the plugin has on record
+		// (e.g. it was redeployed and lost its token store) - re-register
+		// once, in place, and retry with the fresh token before giving up.
+		if freshToken, rerr := sc.reregister(ctx, p.ID, p.BaseURL); rerr == nil {
+			token = freshToken
+			events, err = FetchEvents(ctx, p.BaseURL, token, from, to)
+		}
+	}
 	if err != nil {
 		_ = sc.Plugins.MarkHealth(ctx, p.ID, err)
 		_ = sc.Calendars.MarkSynced(ctx, calendarID, err)
@@ -103,6 +118,26 @@ func (sc SyncContext) SyncOne(ctx context.Context, p models.Plugin, windowDays i
 		_ = sc.CalendarAccounts.MarkSynced(ctx, accountID, nil)
 	}
 	return pruneErr
+}
+
+// reregister calls the plugin's POST /register (with the shared connection
+// secret) to obtain a fresh token, encrypts it, and stores it - the same
+// operation internal/handlers/plugin_auth.go's reregisterPlugin performs,
+// duplicated here (rather than imported) so this package doesn't need to
+// depend on internal/handlers.
+func (sc SyncContext) reregister(ctx context.Context, id, baseURL string) (string, error) {
+	token, err := Register(ctx, baseURL, sc.ConnectionSecret)
+	if err != nil {
+		return "", err
+	}
+	encryptedToken, err := sc.Encryptor.Encrypt(token)
+	if err != nil {
+		return "", err
+	}
+	if err := sc.Plugins.SetToken(ctx, id, encryptedToken); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 func nullableString(s string) sql.NullString {

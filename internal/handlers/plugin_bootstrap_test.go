@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mscreations/hhq/internal/config"
 	"github.com/mscreations/hhq/internal/models"
 	"github.com/mscreations/hhq/internal/testutil"
 	"github.com/mscreations/hhq/internal/util"
@@ -73,7 +74,11 @@ func TestRetryPluginRegistrationSucceedsOnceTheStartOrderingClears(t *testing.T)
 	t.Cleanup(srv.Close)
 
 	plugins := &models.PluginStore{DB: conn}
-	a := &App{Plugins: plugins, Encryptor: encryptor}
+	a := &App{
+		Plugins:   plugins,
+		Encryptor: encryptor,
+		Cfg:       &config.Config{PluginConnectionSecret: "test-plugin-connection-secret"},
+	}
 
 	if err := plugins.Create(ctx, models.Plugin{
 		ID: "flaky-plugin", Name: "Flaky Plugin", BaseURL: srv.URL,

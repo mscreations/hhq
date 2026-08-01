@@ -147,11 +147,12 @@ func newApp(t *testing.T, conn *sql.DB) *handlers.App {
 
 	app := &handlers.App{
 		Cfg: &config.Config{
-			CalendarWindowDays:   7,
-			ApprovalLinkTTL:      time.Hour,
-			InviteLinkTTL:        time.Hour,
-			PasswordResetLinkTTL: time.Hour,
-			PublicBaseURL:        "http://testserver.local",
+			CalendarWindowDays:     7,
+			ApprovalLinkTTL:        time.Hour,
+			InviteLinkTTL:          time.Hour,
+			PasswordResetLinkTTL:   time.Hour,
+			PublicBaseURL:          "http://testserver.local",
+			PluginConnectionSecret: "test-plugin-connection-secret",
 		},
 		Users:            &models.UserStore{DB: conn},
 		Sessions:         &models.SessionStore{DB: conn},

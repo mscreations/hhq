@@ -75,6 +75,9 @@ func FetchManifest(ctx context.Context, baseURL, token string) (*Manifest, error
 		return nil, fmt.Errorf("fetching manifest: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("fetching manifest: %w", ErrForbidden)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching manifest: unexpected status %d", resp.StatusCode)
 	}

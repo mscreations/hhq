@@ -64,6 +64,7 @@ func (s *Scheduler) syncAllPlugins(ctx context.Context) {
 		Events:           s.Events,
 		CalendarAccounts: s.CalendarAccounts,
 		Encryptor:        s.Encryptor,
+		ConnectionSecret: s.Cfg.PluginConnectionSecret,
 	}
 	for _, p := range list {
 		if err := sc.SyncOne(ctx, p, s.Cfg.CalendarWindowDays); err != nil {

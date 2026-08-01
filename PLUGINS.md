@@ -57,27 +57,44 @@ then requires that token on every request.
 
 ### `POST /register`
 
-Called by hhq **unauthenticated** - a plugin has no token yet at this point,
-so nothing else could sign the request. Must be implemented so it succeeds
-**only once**:
+Protected by a **shared connection secret**, not by "first caller wins":
+hhq sends it as an `X-Plugin-Connection-Secret` header on every call. Both
+hhq and the reference plugin default this to `hhq-plugin-connection` if the
+`PLUGIN_CONNECTION_SECRET` env var is unset, so a single-family/
+single-plugin deployment has nothing to hand-generate; set the env var
+explicitly (the same value on both sides) if you want a real secret - e.g.
+if a plugin's port is reachable from a less-trusted part of your network.
 
-- First call: generate a fresh random secret (32 bytes is what
-  billtracker-plugin uses, hex-encoded), persist it (encrypted at rest is
-  strongly recommended, not just plaintext config), and return it:
+- Check the header first, before anything else: mismatch or missing header
+  -> **`401 Unauthorized`**, no token touched. This is deliberately a
+  different status than the `403 Forbidden` every other route uses (see
+  below) - hhq recognizes 401 from `/register` specifically as "the
+  connection secret itself doesn't match" (an operator misconfiguration -
+  `PLUGIN_CONNECTION_SECRET` differs between hhq and the plugin - that
+  retrying alone will never fix) and logs a pointed message telling the
+  operator to check that env var on both sides, rather than treating it as
+  an ordinary transient failure. Log this rejection on the plugin's side too
+  (without ever logging the secret value itself) - this is often the very
+  first sign of a misconfigured deployment, so a silent 401 is easy to miss.
+- On a valid secret, **always** generate a fresh random secret (32 bytes is
+  what billtracker-plugin uses, hex-encoded), persist it (encrypted at rest
+  is strongly recommended, not just plaintext config) - **overwriting
+  whatever token was previously stored** - and return it:
 
   ```json
   { "token": "a1b2c3...64 hex chars..." }
   ```
 
   Respond `200 OK` with that JSON body.
-- Any subsequent call (a token has already been issued): respond
-  `403 Forbidden`. This is what makes `/register` safe to leave
-  unauthenticated - it can only ever hand out the token once, to whichever
-  caller reaches it first (expected to be hhq, on its first successful
-  contact with a freshly-started plugin).
-- Make the generate-and-store step atomic (e.g. an `INSERT ... ON CONFLICT
-  DO NOTHING`-style check-and-set) so two racing calls can never both "win"
-  and a losing caller can never learn the winning token.
+- Unlike an earlier version of this contract, `/register` is **not**
+  restricted to succeeding only once per plugin lifetime - a valid secret
+  lets it succeed (and reissue a fresh token) every time it's called. This
+  is what lets hhq recover automatically if its stored token and the
+  plugin's ever fall out of sync (see "Recovery" below) instead of requiring
+  manual intervention.
+- Compare the secret in constant time (e.g.
+  `crypto/subtle.ConstantTimeCompare` in Go, `hmac.compare_digest` in
+  Python), same as the bearer-token check on every other route.
 - hhq retries `POST /register` every 15 seconds if the plugin isn't reachable
   yet (e.g. plugin and hhq starting around the same time in Kubernetes with
   no init-container ordering between them) - a plugin doesn't need to be up
@@ -93,13 +110,23 @@ Authorization: Bearer <token>
 
 on every request to `/manifest`, `/view`, `/events`, `/settings`, and
 `/actions/{id}`. A plugin must reject any request to these routes that's
-missing the header or whose token doesn't match, with `401 Unauthorized`.
-Compare the token in constant time (e.g. `crypto/subtle.ConstantTimeCompare`
-in Go, `hmac.compare_digest` in Python) so response timing can't be used to
-guess it a byte at a time. Look the token up fresh per request (don't cache
-it only at process start) - this naturally means every route stays
-unreachable until registration has actually completed, with no separate
-"am I registered yet" flag needed.
+missing the header or whose token doesn't match, with **`403 Forbidden`**
+(not `401` - see below for why). Compare the token in constant time (e.g.
+`crypto/subtle.ConstantTimeCompare` in Go, `hmac.compare_digest` in Python)
+so response timing can't be used to guess it a byte at a time. Look the
+token up fresh per request (don't cache it only at process start) - this
+naturally means every route stays unreachable until registration has
+actually completed, with no separate "am I registered yet" flag needed.
+
+**Why 403, not the more conventional 401 for a bad/missing credential**:
+hhq treats a 403 from any of these routes as "my stored token no longer
+matches what the plugin has" (e.g. the plugin was redeployed and lost its
+token store) and automatically calls `POST /register` again (with the
+shared connection secret) to get a fresh token, then retries the original
+request exactly once with it - see "Recovery if hhq and the plugin fall out
+of sync" below. A `401` would not trigger this recovery, so a plugin that
+returns `401` here would require the same manual fix this contract used to
+require before self-registration existed at all.
 
 ### `GET /healthz`
 
@@ -110,12 +137,18 @@ orchestration, but implementing it is expected.
 
 ### Recovery if hhq and the plugin fall out of sync
 
-If hhq's plugin row and the plugin's stored token ever diverge (e.g. hhq
-never received the `/register` response even though the plugin committed its
-token), there's no authenticated "re-register" flow - recovery is manual:
-clear the plugin's stored token (reopens `/register`) and null out hhq's
-stored `encrypted_token` for that plugin (makes hhq retry registration on its
-next restart or retry tick).
+Automatic. If hhq's stored token and the plugin's ever diverge (e.g. hhq
+never received a `/register` response even though the plugin committed its
+token, or the plugin was redeployed and lost its token store entirely), the
+plugin naturally responds `403 Forbidden` to hhq's next authenticated
+request (see "Every other endpoint requires the bearer token" above). hhq
+recognizes that specific status code, calls `POST /register` again (with
+the shared connection secret) to obtain and store a fresh token, and
+retries the original request once with it - all inline, no restart or
+manual database edit required. If the re-registration attempt itself fails
+(e.g. the plugin is genuinely down), the original error is returned/logged
+as usual, and hhq's normal periodic retry paths (the 15-second startup
+retry, or the next scheduled sync) pick it up later.
 
 ## Endpoints
 
@@ -295,11 +328,14 @@ submit, not a background poll).
 
 To stand up a new plugin from scratch:
 
-1. `POST /register` - unauthenticated, issues a token exactly once,
-   `403 Forbidden` on every call after the first.
-2. Bearer-token check in front of every other route below, `401
-   Unauthorized` on missing/mismatched token, looked up fresh per request
-   (not just at startup).
+1. `POST /register` - gated by the `X-Plugin-Connection-Secret` header
+   (default value `hhq-plugin-connection`, `401 Unauthorized` on a mismatch -
+   not `403`, see above), issues a fresh token on every valid call (not just
+   the first).
+2. Bearer-token check in front of every other route below, `403 Forbidden`
+   (not `401` - this is what triggers hhq's automatic re-registration) on
+   missing/mismatched token, looked up fresh per request (not just at
+   startup).
 3. `GET /manifest` - at minimum `{"id", "name", "version", "view": {
    "enabled": false }, "provides_events": false}` is a valid (if inert)
    plugin; flip on `view`/`provides_events` as you implement them.
@@ -316,6 +352,13 @@ To stand up a new plugin from scratch:
    omitting it entirely means that link 404s/errors if clicked).
 8. `GET /healthz` - simple `2xx` liveness response, for your own container
    orchestration's probes.
+9. Log the auth-related rejections above (`/register`'s secret mismatch,
+   and every other route's missing/mismatched bearer token) - these are
+   usually the first sign of a misconfigured deployment (wrong
+   `PLUGIN_CONNECTION_SECRET`, or a stale token after a redeploy), and a
+   silently-401/403ing plugin is hard to diagnose otherwise. Never log the
+   secret or token values themselves, only that a mismatch happened and
+   (if useful) the caller's remote address.
 
 ## Known caveats (current state, not contractual)
 

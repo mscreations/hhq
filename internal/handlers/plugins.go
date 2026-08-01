@@ -83,7 +83,9 @@ func (a *App) KioskPluginView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := plugins.FetchView(r.Context(), plugin.BaseURL, token)
+	html, err := retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (string, error) {
+		return plugins.FetchView(r.Context(), plugin.BaseURL, token)
+	})
 	if err != nil {
 		logging.Warnf("kiosk: fetching view from plugin %q failed: %v", id, err)
 		_ = a.Plugins.MarkHealth(r.Context(), id, err)
@@ -171,7 +173,10 @@ func (a *App) KioskEventAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := plugins.PostAction(r.Context(), plugin.BaseURL, token, actionID, event.UID); err != nil {
+	_, err = retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (struct{}, error) {
+		return struct{}{}, plugins.PostAction(r.Context(), plugin.BaseURL, token, actionID, event.UID)
+	})
+	if err != nil {
 		logging.Errorf("kiosk: plugin %q action %q failed for event uid=%q: %v", plugin.ID, actionID, event.UID, err)
 		http.Error(w, "action failed: "+err.Error(), http.StatusBadGateway)
 		return
@@ -184,6 +189,7 @@ func (a *App) KioskEventAction(w http.ResponseWriter, r *http.Request) {
 		Events:           a.Events,
 		CalendarAccounts: a.CalendarAccounts,
 		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
 	}
 	if err := sc.SyncOne(r.Context(), *plugin, a.Cfg.CalendarWindowDays); err != nil {
 		logging.Warnf("kiosk: resync after plugin %q action %q: %v", plugin.ID, actionID, err)
@@ -243,13 +249,18 @@ func (a *App) PluginSettingsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := plugins.ProxySettings(w, r, plugin.BaseURL, token, a.SessionMgr.CSRFToken(a.CSRF, r)); err != nil {
+	csrfToken := a.SessionMgr.CSRFToken(a.CSRF, r)
+	_, err = retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (struct{}, error) {
+		return struct{}{}, plugins.ProxySettings(w, r, plugin.BaseURL, token, csrfToken)
+	})
+	if err != nil {
 		// ProxySettings only returns an error when it couldn't reach the
-		// plugin at all (see its doc comment) - nothing was written to w yet,
-		// so redirect back to the dashboard with a simple message shown in a
-		// modal (buildParentDashboardData/dashboard.html), matching the
-		// dashboard's existing look/feel instead of navigating to a bare page
-		// with a raw dial error.
+		// plugin at all, or when it returned 403 and the one-shot reauth-retry
+		// (callWithReauth) also failed (see both doc comments) - in every case
+		// nothing was written to w yet, so redirect back to the dashboard with
+		// a simple message shown in a modal (buildParentDashboardData/
+		// dashboard.html), matching the dashboard's existing look/feel instead
+		// of navigating to a bare page with a raw dial error.
 		logging.Warnf("parent: plugin %q settings page unreachable: %v", id, err)
 		_ = a.Plugins.MarkHealth(r.Context(), id, err)
 		msg := fmt.Sprintf("%s isn't reachable right now. Make sure the plugin is running, then try again.", plugin.Name)

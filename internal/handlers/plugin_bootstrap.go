@@ -258,18 +258,17 @@ func (a *App) tryRegisterAndRefresh(ctx context.Context, id, baseURL string) boo
 			return true // not a transient error - retrying won't help
 		}
 	} else {
-		token, err = plugins.Register(ctx, baseURL)
+		token, err = a.reregisterPlugin(ctx, id, baseURL)
 		if err != nil {
-			logging.Warnf("plugin %q: not yet reachable to self-register (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
-			return false
-		}
-		encryptedToken, err := a.Encryptor.Encrypt(token)
-		if err != nil {
-			logging.Errorf("plugin %q: encrypting received token: %v", id, err)
-			return false
-		}
-		if err := a.Plugins.SetToken(ctx, id, encryptedToken); err != nil {
-			logging.Errorf("plugin %q: storing received token: %v", id, err)
+			if errors.Is(err, plugins.ErrConnectionSecretMismatch) {
+				// Not a "plugin isn't up yet" situation - this is a standing
+				// operator misconfiguration that won't resolve on its own, so
+				// it's logged louder even though the retry loop still runs
+				// (in case the operator fixes it while hhq is up).
+				logging.Errorf("plugin %q: %v (will keep retrying every %s)", id, err, pluginRegistrationRetryInterval)
+			} else {
+				logging.Warnf("plugin %q: not yet reachable to self-register (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+			}
 			return false
 		}
 		logging.Infof("plugin %q: self-registered successfully", id)
@@ -286,8 +285,26 @@ func (a *App) tryRegisterAndRefresh(ctx context.Context, id, baseURL string) boo
 // so callers (tryRegisterAndRefresh) know whether to keep retrying.
 func (a *App) refreshPluginManifest(ctx context.Context, id, baseURL, token string) bool {
 	manifest, err := plugins.FetchManifest(ctx, baseURL, token)
+	if errors.Is(err, plugins.ErrForbidden) {
+		// The token we were just handed (or had stored) is no longer valid -
+		// re-register once and retry with the fresh token before giving up
+		// (see retryOnForbidden for the same one-shot pattern used
+		// elsewhere).
+		logging.Warnf("plugin %q: manifest fetch rejected token (403) - re-registering", id)
+		freshToken, rerr := a.reregisterPlugin(ctx, id, baseURL)
+		if rerr != nil {
+			err = rerr // surface *why* re-registration itself failed, not the original 403
+		} else {
+			token = freshToken
+			manifest, err = plugins.FetchManifest(ctx, baseURL, token)
+		}
+	}
 	if err != nil {
-		logging.Warnf("plugin %q: fetching manifest failed (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+		if errors.Is(err, plugins.ErrConnectionSecretMismatch) {
+			logging.Errorf("plugin %q: %v (will keep retrying every %s)", id, err, pluginRegistrationRetryInterval)
+		} else {
+			logging.Warnf("plugin %q: fetching manifest failed (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+		}
 		_ = a.Plugins.MarkHealth(ctx, id, err)
 		return false
 	}
@@ -342,6 +359,7 @@ func (a *App) syncPluginEvents(ctx context.Context, id string) {
 		Events:           a.Events,
 		CalendarAccounts: a.CalendarAccounts,
 		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
 	}
 	if err := sc.SyncOne(ctx, *plugin, a.Cfg.CalendarWindowDays); err != nil {
 		logging.Errorf("plugin %q: post-refresh event sync failed: %v", id, err)
