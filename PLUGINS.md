@@ -13,10 +13,11 @@ server - hhq only ever speaks plain HTTP + JSON/HTML to it.
 ## Trust boundary (read this first)
 
 hhq treats a registered plugin's HTTP responses as **trusted** HTML/content,
-not sanitized user input. `GET /view`'s response is inlined directly into the
-kiosk page; a plugin's icon markup (from `GET /manifest`) is inlined into the
-kiosk nav button as raw SVG. Only register plugins you wrote or trust as much
-as hhq itself - there is no sandboxing or output sanitization on hhq's side.
+not sanitized user input. `GET /view/{id}`'s response is inlined directly
+into the kiosk page; a plugin's icon markup (from `GET /manifest`) is inlined
+into the kiosk nav button as raw SVG. Only register plugins you wrote or
+trust as much as hhq itself - there is no sandboxing or output sanitization
+on hhq's side.
 
 ## Registration and networking
 
@@ -37,9 +38,10 @@ as hhq itself - there is no sandboxing or output sanitization on hhq's side.
   ```
 
   `id` is a stable slug (also used as a URL path segment for hhq's own
-  routes, e.g. `/kiosk/view/plugin/{id}`) and `base_url` must be reachable
-  from hhq's pod/process with no path suffix (hhq appends `/register`,
-  `/manifest`, `/view`, etc. itself). `name` defaults to `id` if omitted.
+  routes, e.g. `/kiosk/view/plugin/{id}/{view_id}`) and `base_url` must be
+  reachable from hhq's pod/process with no path suffix (hhq appends
+  `/register`, `/manifest`, `/view/{id}`, etc. itself). `name` defaults to
+  `id` if omitted.
 - hhq talks to the plugin; the plugin is never called from a parent's or
   child's browser directly. Kiosk view content and the parent settings page
   are both proxied through hhq (see below).
@@ -108,7 +110,7 @@ Once a token is established, hhq sends it as:
 Authorization: Bearer <token>
 ```
 
-on every request to `/manifest`, `/view`, `/events`, `/settings`, and
+on every request to `/manifest`, `/view/{id}`, `/events`, `/settings`, and
 `/actions/{id}`. A plugin must reject any request to these routes that's
 missing the header or whose token doesn't match, with **`403 Forbidden`**
 (not `401` - see below for why). Compare the token in constant time (e.g.
@@ -158,9 +160,9 @@ above.
 
 ### `GET /manifest`
 
-Describes the plugin: whether it wants a kiosk nav button/view, and whether
-it supplies calendar events. Fetched at registration time and periodically
-thereafter (hhq allows up to 10s for this call).
+Describes the plugin: whatever kiosk nav buttons/views it wants (zero, one,
+or more), and whether it supplies calendar events. Fetched at registration
+time and periodically thereafter (hhq allows up to 10s for this call).
 
 Request: no body, no query params.
 
@@ -171,30 +173,48 @@ Response `200 OK`:
   "id": "billtracker",
   "name": "Bill Tracker",
   "version": "1.0.0",
-  "view": {
-    "enabled": true,
-    "label": "Bills",
-    "icon": "<svg>...</svg>"
-  },
+  "views": [
+    { "id": "bills", "enabled": true, "label": "Bills", "icon": "<svg>...</svg>" }
+  ],
   "provides_events": true
 }
 ```
 
 - `id` / `name` / `version`: informational (version isn't currently used by
   hhq for compatibility gating, but include it).
-- `view.enabled`: if `true`, hhq shows a nav button on the kiosk labeled
-  `view.label` using `view.icon` as trusted inline SVG markup (a blank icon
-  falls back to a generic default). If `false`, no nav button is shown and
-  `GET /view` is never called.
+- `views`: an array - a plugin can register any number of views (zero, one,
+  or more), each getting its **own** kiosk nav button. Omit the field, or
+  send `[]`, for a plugin with no kiosk view at all. Each entry:
+  - `id`: a stable slug, unique within this plugin (a plugin with only one
+    view still needs to give it an id - there's no longer an id-less
+    single-view shorthand). Used as a URL path segment for `GET
+    /view/{id}` (see below) and for hhq's own kiosk route
+    (`/kiosk/view/plugin/{plugin_id}/{id}`) - keep it stable across manifest
+    fetches, since changing it is indistinguishable from removing one view
+    and adding another.
+  - `enabled`: if `false`, this entry is treated the same as if it weren't
+    in the array at all (no nav button, `GET /view/{id}` never called for
+    it) - useful for a plugin that wants to advertise a view conditionally
+    (e.g. only once some setup step is complete) without restructuring the
+    array shape.
+  - `label` / `icon`: shown on this view's nav button; `icon` is trusted
+    inline SVG markup (a blank icon falls back to a generic default).
+  - Every `GET /manifest` fetch **replaces** the plugin's entire registered
+    view set - a view your previous manifest listed but this one omits (or
+    sets `enabled: false`) loses its nav button on this refresh, not just on
+    the next one.
 - `provides_events`: if `true`, hhq provisions a dedicated synthetic calendar
   for this plugin and starts periodically calling `GET /events` to populate
   it (see below). If `false`, `GET /events` is never called.
 
-### `GET /view`
+### `GET /view/{id}`
 
-Only called if the manifest's `view.enabled` was `true`, and only when a
-user actually taps the plugin's kiosk nav button (not polled/pre-fetched) -
-hhq allows 3 seconds for this call, since a person is waiting.
+`{id}` is one of the ids this plugin listed in `Manifest.views`. Only called
+for a view whose manifest entry has `enabled: true`, and only when a user
+actually taps that specific view's kiosk nav button (not polled/
+pre-fetched) - hhq allows 3 seconds for this call, since a person is
+waiting. Each of a plugin's views is fetched completely independently - a
+slow or failing view doesn't affect any of the plugin's other views.
 
 Request: no body, no query params.
 
@@ -207,7 +227,10 @@ layout beyond that region).
 A non-`200` response, a timeout, or a connection failure results in hhq
 showing an empty state on the kiosk rather than an error - a down/slow
 plugin should never be able to put an error blob on an always-on wall
-display.
+display. An `{id}` hhq no longer recognizes (e.g. a stale nav button tapped
+right as a manifest refresh removed that view) is not specially validated
+against the cached view set before the call is made - whatever the plugin
+returns for it (commonly a `404`) just falls into this same handling.
 
 ### `GET /events`
 
@@ -301,8 +324,8 @@ seconds for this call (a deliberate, parent-initiated page load or form
 submit, not a background poll).
 
 - **Response must be a full, standalone HTML document** (with `<html>`,
-  `<body>`, etc.) - not a fragment like `/view`. hhq post-processes the HTML
-  before showing it to the parent's browser:
+  `<body>`, etc.) - not a fragment like `/view/{id}`. hhq post-processes the
+  HTML before showing it to the parent's browser:
   - Injects a hidden `csrf_token` field into every `<form method="POST">` it
     finds, so the form can be submitted back through hhq's own CSRF
     middleware. Your `POST /settings` handler should ignore any form field
@@ -336,10 +359,11 @@ To stand up a new plugin from scratch:
    (not `401` - this is what triggers hhq's automatic re-registration) on
    missing/mismatched token, looked up fresh per request (not just at
    startup).
-3. `GET /manifest` - at minimum `{"id", "name", "version", "view": {
-   "enabled": false }, "provides_events": false}` is a valid (if inert)
-   plugin; flip on `view`/`provides_events` as you implement them.
-4. If `view.enabled: true` -> `GET /view` returning an HTML fragment.
+3. `GET /manifest` - at minimum `{"id", "name", "version", "views": [],
+   "provides_events": false}` is a valid (if inert) plugin; add entries to
+   `views`/flip on `provides_events` as you implement them.
+4. For each enabled entry in `views` -> `GET /view/{id}` returning an HTML
+   fragment for that id.
 5. If `provides_events: true` -> `GET /events` returning the JSON shape
    above, with stable `uid`s and timezone-aware timestamps.
 6. If any event has `actions` -> a matching `POST /actions/{id}` per action

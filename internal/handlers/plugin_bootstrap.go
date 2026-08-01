@@ -309,14 +309,17 @@ func (a *App) refreshPluginManifest(ctx context.Context, id, baseURL, token stri
 		return false
 	}
 
-	viewLabel, viewIcon := nullableViewSpec(manifest)
 	version := sql.NullString{String: manifest.Version, Valid: manifest.Version != ""}
-	if err := a.Plugins.UpdateManifest(ctx, id, manifest.View.Enabled, viewLabel, viewIcon, manifest.ProvidesEvents, version); err != nil {
+	if err := a.Plugins.UpdateManifest(ctx, id, manifest.ProvidesEvents, version); err != nil {
 		logging.Errorf("plugin %q: caching manifest: %v", id, err)
 		return false
 	}
+	if err := a.Plugins.ReplaceViews(ctx, id, manifestViews(manifest)); err != nil {
+		logging.Errorf("plugin %q: caching views: %v", id, err)
+		return false
+	}
 	_ = a.Plugins.MarkHealth(ctx, id, nil)
-	logging.Infof("plugin %q: manifest refreshed (view_enabled=%v, provides_events=%v)", id, manifest.View.Enabled, manifest.ProvidesEvents)
+	logging.Infof("plugin %q: manifest refreshed (views=%d, provides_events=%v)", id, len(manifest.Views), manifest.ProvidesEvents)
 
 	if manifest.ProvidesEvents {
 		if err := a.ensurePluginCalendar(ctx, id, manifest.Name); err != nil {
@@ -410,13 +413,22 @@ func (a *App) ensurePluginCalendar(ctx context.Context, id, displayName string) 
 	return nil
 }
 
-// nullableViewSpec converts a fetched Manifest's view fields into the
-// nullable columns hhq stores - a plugin that opts out of a view
-// (View.Enabled == false) gets NULL/NULL.
-func nullableViewSpec(m *plugins.Manifest) (sql.NullString, sql.NullString) {
-	if !m.View.Enabled {
-		return sql.NullString{}, sql.NullString{}
+// manifestViews converts a fetched Manifest's view list into the
+// []models.PluginView shape PluginStore.ReplaceViews stores, keeping only
+// the views the plugin currently has enabled (a disabled or omitted view is
+// simply left out, which is what causes ReplaceViews to drop its nav
+// button on this refresh).
+func manifestViews(m *plugins.Manifest) []models.PluginView {
+	views := make([]models.PluginView, 0, len(m.Views))
+	for _, v := range m.Views {
+		if !v.Enabled {
+			continue
+		}
+		views = append(views, models.PluginView{
+			ViewID: v.ID,
+			Label:  v.Label,
+			Icon:   v.Icon,
+		})
 	}
-	return sql.NullString{String: m.View.Label, Valid: true},
-		sql.NullString{String: m.View.Icon, Valid: true}
+	return views
 }

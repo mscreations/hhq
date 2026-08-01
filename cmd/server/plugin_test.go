@@ -30,10 +30,19 @@ import (
 	"github.com/mscreations/hhq/internal/models"
 )
 
+// fakePluginViewID is the fixed view id fakePluginServer's single registered
+// view uses - kiosk routes to a plugin view need both the plugin's own id
+// and this view id (e.g. /kiosk/view/plugin/bill-tracker/bills).
+const fakePluginViewID = "bills"
+
 // fakePluginServer stands in for an external-process plugin, serving the
 // full contract (manifest/view/events/settings/healthz) described in
 // internal/plugins' package doc - the same "real fake server, real binary"
-// rigor CLAUDE.md used for CalDAV (see caldav_test.go's mock servers).
+// rigor CLAUDE.md used for CalDAV (see caldav_test.go's mock servers). Its
+// manifest always reports exactly one view, with the fixed id "bills" (see
+// fakePluginViewID) - viewEnabled controls whether that view entry has
+// enabled:true/false, matching the pre-multi-view contract's viewEnabled
+// param, just via the new views array shape.
 func fakePluginServer(t *testing.T, viewEnabled bool, label, icon string, providesEvents bool) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -47,15 +56,13 @@ func fakePluginServer(t *testing.T, viewEnabled bool, label, icon string, provid
 			"id":      "bill-tracker",
 			"name":    "Bill Tracker",
 			"version": "1.0.0",
-			"view": map[string]any{
-				"enabled": viewEnabled,
-				"label":   label,
-				"icon":    icon,
+			"views": []map[string]any{
+				{"id": fakePluginViewID, "enabled": viewEnabled, "label": label, "icon": icon},
 			},
 			"provides_events": providesEvents,
 		})
 	})
-	mux.HandleFunc("/view", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/view/{viewID}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<p>3 bills due</p>"))
 	})
@@ -109,14 +116,18 @@ func TestBootstrapPluginsProvisionsManifestAndSyntheticCalendar(t *testing.T) {
 	if !p.BootstrapManaged || !p.Enabled {
 		t.Fatalf("expected a bootstrap-managed, enabled plugin, got %+v", p)
 	}
-	if !p.ViewEnabled {
-		t.Fatalf("expected view_enabled=true cached from manifest, got %+v", p)
+	views, err := ts.App.Plugins.ListViews(t.Context())
+	if err != nil {
+		t.Fatalf("ListViews: %v", err)
 	}
-	if !p.ViewLabel.Valid || p.ViewLabel.String != "Bills" {
-		t.Fatalf("expected view_label=%q cached from manifest, got %+v", "Bills", p.ViewLabel)
+	if len(views) != 1 || views[0].PluginID != "bill-tracker" || views[0].ViewID != fakePluginViewID {
+		t.Fatalf("expected exactly one view cached from manifest, got %+v", views)
 	}
-	if !p.ViewIcon.Valid || p.ViewIcon.String != "<svg></svg>" {
-		t.Fatalf("expected view_icon cached from manifest, got %+v", p.ViewIcon)
+	if views[0].Label != "Bills" {
+		t.Fatalf("expected label=%q cached from manifest, got %+v", "Bills", views[0])
+	}
+	if views[0].Icon != "<svg></svg>" {
+		t.Fatalf("expected icon cached from manifest, got %+v", views[0])
 	}
 	if !p.ProvidesEvents {
 		t.Fatal("expected provides_events=true cached from manifest")
@@ -155,7 +166,7 @@ func TestKioskPluginViewServesViewHTML(t *testing.T) {
 		{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: plugin.URL, Enabled: true},
 	})
 
-	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/bill-tracker")
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/bill-tracker/" + fakePluginViewID)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -251,7 +262,7 @@ func TestPluginSettingsPageSubmitRoundTripsCSRFToken(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "bill-tracker", "name": "Bill Tracker", "version": "1.0.0",
-			"view": map[string]any{"enabled": false}, "provides_events": false,
+			"views": []map[string]any{{"id": "bills", "enabled": false}}, "provides_events": false,
 		})
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })

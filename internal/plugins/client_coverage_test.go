@@ -53,7 +53,7 @@ func brokenBodyServer(t *testing.T) *httptest.Server {
 
 func TestFetchViewSuccess(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/view" {
+		if r.URL.Path != "/view/bills" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
@@ -63,7 +63,7 @@ func TestFetchViewSuccess(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	body, err := FetchView(context.Background(), srv.URL, "tok")
+	body, err := FetchView(context.Background(), srv.URL, "tok", "bills")
 	if err != nil {
 		t.Fatalf("FetchView: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestFetchViewRequestCreationError(t *testing.T) {
 	// A malformed URL (no scheme, contains an illegal leading colon) causes
 	// http.NewRequestWithContext's internal url.Parse to fail before any
 	// network call is attempted.
-	_, err := FetchView(context.Background(), ":not-a-url", "tok")
+	_, err := FetchView(context.Background(), ":not-a-url", "tok", "bills")
 	if err == nil {
 		t.Fatal("expected an error constructing the request")
 	}
@@ -85,7 +85,7 @@ func TestFetchViewRequestCreationError(t *testing.T) {
 func TestFetchViewDoError(t *testing.T) {
 	// Port 0 on the loopback address is never listening, so the client's Do
 	// call fails at the transport level (connection refused).
-	_, err := FetchView(context.Background(), "http://127.0.0.1:1", "tok")
+	_, err := FetchView(context.Background(), "http://127.0.0.1:1", "tok", "bills")
 	if err == nil {
 		t.Fatal("expected a transport error")
 	}
@@ -100,7 +100,7 @@ func TestFetchViewNonOKStatus(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := FetchView(context.Background(), srv.URL, "tok")
+	_, err := FetchView(context.Background(), srv.URL, "tok", "bills")
 	if err == nil || !strings.Contains(err.Error(), "unexpected status 404") {
 		t.Fatalf("err = %v, want unexpected status 404", err)
 	}
@@ -108,7 +108,7 @@ func TestFetchViewNonOKStatus(t *testing.T) {
 
 func TestFetchViewReadBodyError(t *testing.T) {
 	srv := brokenBodyServer(t)
-	_, err := FetchView(context.Background(), srv.URL, "tok")
+	_, err := FetchView(context.Background(), srv.URL, "tok", "bills")
 	if err == nil || !strings.Contains(err.Error(), "reading view response") {
 		t.Fatalf("err = %v, want a 'reading view response' error", err)
 	}

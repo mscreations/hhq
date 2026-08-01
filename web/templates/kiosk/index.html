@@ -50,9 +50,9 @@
       <span>Weather</span>
     </button>
     {{range .Plugins}}
-    <button type="button" class="nav-btn" data-nav="plugin-{{.ID}}"
-            hx-get="/kiosk/view/plugin/{{.ID}}" hx-target="#kiosk-view" hx-swap="innerHTML"
-            hx-on::before-request="setActiveNav('plugin-{{.ID}}')">
+    <button type="button" class="nav-btn" data-nav="plugin-{{.PluginID}}-{{.ViewID}}"
+            hx-get="/kiosk/view/plugin/{{.PluginID}}/{{.ViewID}}" hx-target="#kiosk-view" hx-swap="innerHTML"
+            hx-on::before-request="setActiveNav('plugin-{{.PluginID}}-{{.ViewID}}')">
       {{if .IconHTML}}{{.IconHTML}}{{else}}{{template "kiosk/_plugin_default_icon"}}{{end}}
       <span>{{.Label}}</span>
     </button>

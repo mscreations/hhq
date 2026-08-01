@@ -39,13 +39,17 @@ import (
 // path of any page render.
 const manifestTimeout = 10 * time.Second
 
-// ViewManifest describes whether/how a plugin wants a kiosk nav button and
-// full-screen view - see the Manifest.View field. Icon is trusted inline SVG
-// markup, inlined directly into the kiosk nav button (same trust boundary as
-// the HTML returned by GET /view - see the package doc comment); a plugin
-// that leaves it blank gets a generic default icon (see
-// kiosk/_plugin_default_icon.html).
+// ViewManifest describes one kiosk nav button/full-screen view a plugin
+// wants - see the Manifest.Views field. A plugin can register any number of
+// these (previously exactly one); each gets its own nav button, routed via
+// ID (a plugin-chosen slug, stable across manifest fetches, unique within
+// that plugin - used as a URL path segment the same way the plugin's own ID
+// is). Icon is trusted inline SVG markup, inlined directly into the kiosk
+// nav button (same trust boundary as the HTML returned by GET
+// /view/{id} - see the package doc comment); a plugin that leaves it blank
+// gets a generic default icon (see kiosk/_plugin_default_icon.html).
 type ViewManifest struct {
+	ID      string `json:"id"`
 	Enabled bool   `json:"enabled"`
 	Label   string `json:"label"`
 	Icon    string `json:"icon"`
@@ -53,11 +57,11 @@ type ViewManifest struct {
 
 // Manifest is the JSON shape returned by a plugin's GET /manifest.
 type Manifest struct {
-	ID             string       `json:"id"`
-	Name           string       `json:"name"`
-	Version        string       `json:"version"`
-	View           ViewManifest `json:"view"`
-	ProvidesEvents bool         `json:"provides_events"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Version        string         `json:"version"`
+	Views          []ViewManifest `json:"views"`
+	ProvidesEvents bool           `json:"provides_events"`
 }
 
 // FetchManifest calls GET {baseURL}/manifest and decodes the response.

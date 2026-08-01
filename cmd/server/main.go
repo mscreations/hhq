@@ -433,7 +433,7 @@ func buildRouter(app *handlers.App) http.Handler {
 	r.Post("/kiosk/events/{id}/actions/{actionID}", app.KioskEventAction)
 	r.Get("/kiosk/fragments/weather", app.KioskFragmentWeather)
 	r.Get("/kiosk/weather/page", app.KioskWeatherPage)
-	r.Get("/kiosk/view/plugin/{id}", app.KioskPluginView)
+	r.Get("/kiosk/view/plugin/{id}/{viewID}", app.KioskPluginView)
 
 	// --- Avatars: unauthenticated (shown on the unauthenticated kiosk screen) ---
 	r.Get("/avatars/{id}", app.ServeAvatar)

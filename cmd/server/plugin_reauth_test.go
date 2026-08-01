@@ -29,6 +29,10 @@ import (
 	"github.com/mscreations/hhq/internal/config"
 )
 
+// reauthPluginViewID is the fixed view id reauthPluginServer's single
+// registered view uses.
+const reauthPluginViewID = "reauth-view"
+
 // reauthPluginServer is a fake plugin that mimics billtracker-plugin's real
 // contract for this feature: POST /register requires a matching
 // X-Plugin-Connection-Secret header, always issues a fresh token on a valid
@@ -77,11 +81,13 @@ func reauthPluginServer(t *testing.T, connectionSecret string) *httptest.Server 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "reauth-plugin", "name": "Reauth Plugin", "version": "1.0.0",
-			"view":            map[string]any{"enabled": true, "label": "Reauth", "icon": ""},
+			"views": []map[string]any{
+				{"id": reauthPluginViewID, "enabled": true, "label": "Reauth", "icon": ""},
+			},
 			"provides_events": false,
 		})
 	})
-	mux.HandleFunc("/view", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/view/{viewID}", func(w http.ResponseWriter, r *http.Request) {
 		if !checkAuth(w, r) {
 			return
 		}
@@ -110,7 +116,7 @@ func TestKioskPluginViewReregistersAfterTokenRejected(t *testing.T) {
 	})
 
 	// Confirm the happy path works before invalidating anything.
-	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin")
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin/" + reauthPluginViewID)
 	if err != nil {
 		t.Fatalf("GET (before invalidation): %v", err)
 	}
@@ -135,7 +141,7 @@ func TestKioskPluginViewReregistersAfterTokenRejected(t *testing.T) {
 
 	// hhq's stored token is now stale. The next kiosk request must still
 	// succeed - hhq should detect the 403, re-register itself, and retry.
-	resp2, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin")
+	resp2, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin/" + reauthPluginViewID)
 	if err != nil {
 		t.Fatalf("GET (after invalidation): %v", err)
 	}
@@ -173,7 +179,7 @@ func TestKioskPluginViewShowsUnavailableWhenReregistrationFails(t *testing.T) {
 	// attempt itself gets rejected.
 	ts.App.Cfg.PluginConnectionSecret = "a-different-secret-hhq-now-has"
 
-	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin-2")
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/reauth-plugin-2/" + reauthPluginViewID)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}

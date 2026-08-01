@@ -32,7 +32,7 @@ func TestFetchManifestSuccess(t *testing.T) {
 			t.Fatalf("Authorization = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id":"bill-tracker","name":"Bill Tracker","version":"1.0.0","view":{"enabled":true,"label":"Bills","icon":"<svg></svg>"},"provides_events":true}`))
+		w.Write([]byte(`{"id":"bill-tracker","name":"Bill Tracker","version":"1.0.0","views":[{"id":"bills","enabled":true,"label":"Bills","icon":"<svg></svg>"}],"provides_events":true}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -40,7 +40,7 @@ func TestFetchManifestSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchManifest: %v", err)
 	}
-	if m.ID != "bill-tracker" || !m.View.Enabled || m.View.Label != "Bills" || !m.ProvidesEvents {
+	if m.ID != "bill-tracker" || len(m.Views) != 1 || !m.Views[0].Enabled || m.Views[0].Label != "Bills" || !m.ProvidesEvents {
 		t.Fatalf("unexpected manifest: %+v", m)
 	}
 }

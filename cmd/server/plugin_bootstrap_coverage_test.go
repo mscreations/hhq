@@ -300,7 +300,7 @@ func TestBuildPluginNavItemsHappyPathViaKioskIndex(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body: %s", resp.StatusCode, body)
 	}
-	if !strings.Contains(string(body), `data-nav="plugin-nav-plugin"`) {
+	if !strings.Contains(string(body), `data-nav="plugin-nav-plugin-`+fakePluginViewID+`"`) {
 		t.Fatalf("expected the plugin's nav button in the rendered kiosk page, got: %s", body)
 	}
 	if !strings.Contains(string(body), "<svg>icon</svg>") {
@@ -341,7 +341,7 @@ func TestKioskPluginViewDecryptTokenError(t *testing.T) {
 		t.Fatalf("SetToken: %v", err)
 	}
 
-	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/bad-token-view-plugin")
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/bad-token-view-plugin/" + fakePluginViewID)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestKioskPluginViewFetchFailureShowsUnavailableMessage(t *testing.T) {
 	})
 	plugin.Close()
 
-	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/crashed-plugin")
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/view/plugin/crashed-plugin/" + fakePluginViewID)
 	if err != nil {
 		t.Fatalf("GET: %v", err)
 	}
