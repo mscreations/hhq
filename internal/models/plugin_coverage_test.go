@@ -273,19 +273,29 @@ func TestPluginStoreUpdateBootstrap(t *testing.T) {
 	s := &PluginStore{DB: conn}
 	ctx := t.Context()
 
-	if err := s.Create(ctx, Plugin{ID: "billtracker", Name: "Bill Tracker", BaseURL: "http://old:1", Enabled: true, BootstrapManaged: true}); err != nil {
+	repoURL := sql.NullString{String: "https://github.com/mscreations/billtracker-plugin", Valid: true}
+	if err := s.Create(ctx, Plugin{ID: "billtracker", Name: "Bill Tracker", BaseURL: "http://old:1", Enabled: true, BootstrapManaged: true, RepoURL: repoURL}); err != nil {
 		t.Fatalf("Create: %v", err)
-	}
-
-	if err := s.UpdateBootstrap(ctx, "billtracker", "Bill Tracker Renamed", "http://new:2", false); err != nil {
-		t.Fatalf("UpdateBootstrap: %v", err)
 	}
 
 	got, err := s.GetByID(ctx, "billtracker")
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
-	if got.Name != "Bill Tracker Renamed" || got.BaseURL != "http://new:2" || got.Enabled {
+	if got.RepoURL != repoURL {
+		t.Fatalf("Create did not persist RepoURL: %+v", got)
+	}
+
+	newRepoURL := sql.NullString{String: "https://github.com/mscreations/billtracker-plugin-fork", Valid: true}
+	if err := s.UpdateBootstrap(ctx, "billtracker", "Bill Tracker Renamed", "http://new:2", false, newRepoURL); err != nil {
+		t.Fatalf("UpdateBootstrap: %v", err)
+	}
+
+	got, err = s.GetByID(ctx, "billtracker")
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Name != "Bill Tracker Renamed" || got.BaseURL != "http://new:2" || got.Enabled || got.RepoURL != newRepoURL {
 		t.Fatalf("UpdateBootstrap did not apply: %+v", got)
 	}
 }

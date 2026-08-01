@@ -28,6 +28,13 @@ type PluginBootstrap struct {
 	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
 	Enabled bool   `json:"enabled"`
+	// RepoURL is optional - e.g. "https://github.com/mscreations/billtracker-plugin".
+	// When set, hhq periodically checks that repo's GitHub Releases/Tags for
+	// a newer version than the plugin's currently-reported one and shows an
+	// update-available icon on the parent dashboard (see internal/release
+	// and internal/scheduler's checkPluginUpdates). Left unset, the plugin
+	// simply never gets an update check.
+	RepoURL string `json:"repo_url,omitempty"`
 }
 
 // ParsePluginsBootstrap unmarshals CONFIG_DIR/plugins.json's contents - a

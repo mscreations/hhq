@@ -38,6 +38,7 @@ type Plugin struct {
 	EncryptedToken   []byte
 	BootstrapManaged bool
 	Version          sql.NullString
+	RepoURL          sql.NullString
 	LastHealthyAt    sql.NullTime
 	LastError        sql.NullString
 	CreatedAt        time.Time
@@ -64,7 +65,7 @@ type PluginStore struct {
 	DB *sql.DB
 }
 
-const pluginColumns = `id, name, base_url, enabled, provides_events, calendar_id, encrypted_token, bootstrap_managed, version, last_healthy_at, last_error, created_at`
+const pluginColumns = `id, name, base_url, enabled, provides_events, calendar_id, encrypted_token, bootstrap_managed, version, repo_url, last_healthy_at, last_error, created_at`
 
 func (s *PluginStore) ListAll(ctx context.Context) ([]Plugin, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+pluginColumns+` FROM hhq_plugins ORDER BY name`)
@@ -171,19 +172,19 @@ func (s *PluginStore) GetByCalendarID(ctx context.Context, calendarID int) (*Plu
 
 func (s *PluginStore) Create(ctx context.Context, p Plugin) error {
 	_, err := s.DB.ExecContext(ctx, `
-		INSERT INTO hhq_plugins (id, name, base_url, enabled, bootstrap_managed)
-		VALUES ($1, $2, $3, $4, $5)`,
-		p.ID, p.Name, p.BaseURL, p.Enabled, p.BootstrapManaged)
+		INSERT INTO hhq_plugins (id, name, base_url, enabled, bootstrap_managed, repo_url)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		p.ID, p.Name, p.BaseURL, p.Enabled, p.BootstrapManaged, p.RepoURL)
 	return err
 }
 
 // UpdateBootstrap refreshes a bootstrap-managed plugin's name/base_url/
-// enabled to match its current plugins.json entry - mirrors
+// enabled/repo_url to match its current plugins.json entry - mirrors
 // CalendarAccountStore.UpdateBootstrap. Deliberately leaves encrypted_token
 // untouched - self-registration (see SetToken) is independent of config
 // reconciliation.
-func (s *PluginStore) UpdateBootstrap(ctx context.Context, id, name, baseURL string, enabled bool) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE hhq_plugins SET name = $2, base_url = $3, enabled = $4 WHERE id = $1`, id, name, baseURL, enabled)
+func (s *PluginStore) UpdateBootstrap(ctx context.Context, id, name, baseURL string, enabled bool, repoURL sql.NullString) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE hhq_plugins SET name = $2, base_url = $3, enabled = $4, repo_url = $5 WHERE id = $1`, id, name, baseURL, enabled, repoURL)
 	return err
 }
 
@@ -241,7 +242,7 @@ func scanPlugins(rows *sql.Rows) ([]Plugin, error) {
 	var out []Plugin
 	for rows.Next() {
 		var p Plugin
-		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.RepoURL, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -251,7 +252,7 @@ func scanPlugins(rows *sql.Rows) ([]Plugin, error) {
 
 func scanPlugin(row rowScanner) (*Plugin, error) {
 	var p Plugin
-	if err := row.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Name, &p.BaseURL, &p.Enabled, &p.ProvidesEvents, &p.CalendarID, &p.EncryptedToken, &p.BootstrapManaged, &p.Version, &p.RepoURL, &p.LastHealthyAt, &p.LastError, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &p, nil

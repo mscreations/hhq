@@ -28,6 +28,7 @@ import (
 
 	"github.com/mscreations/hhq/internal/config"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/release"
 )
 
 // fakePluginViewID is the fixed view id fakePluginServer's single registered
@@ -235,6 +236,61 @@ func TestTogglePlugin(t *testing.T) {
 	}
 	if p.Enabled {
 		t.Fatal("expected toggling an enabled plugin to disable it")
+	}
+}
+
+// TestParentDashboardShowsPluginUpdateIcon confirms the Plugins card renders
+// an update-available icon/link next to a plugin's version when the
+// scheduler's PluginReleases cache (see internal/scheduler's
+// checkPluginUpdates) has a newer version cached than what the plugin's
+// manifest last reported (fakePluginServer always reports "1.0.0"), and that
+// the icon is absent when the cached version isn't newer.
+func TestParentDashboardShowsPluginUpdateIcon(t *testing.T) {
+	ts := newTestServer(t)
+	ts.App.PluginReleases = &release.PluginCache{}
+	_ = ts.login(t, "plugin-update-icon@example.com", "s3cret-password")
+
+	plugin := fakePluginServer(t, true, "Bills", "", false)
+	ts.App.BootstrapPlugins(t.Context(), []config.PluginBootstrap{
+		{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: plugin.URL, Enabled: true, RepoURL: "https://github.com/mscreations/billtracker-plugin"},
+	})
+
+	ts.App.PluginReleases.Set("bill-tracker", &release.Release{
+		Version: "1.1.0",
+		URL:     "https://github.com/mscreations/billtracker-plugin/releases/tag/v1.1.0",
+	})
+
+	page, err := ts.Client.Get(ts.URL + "/parent")
+	if err != nil {
+		t.Fatalf("GET /parent: %v", err)
+	}
+	defer page.Body.Close()
+	body, err := io.ReadAll(page.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	html := string(body)
+	if !strings.Contains(html, `class="plugin-update-icon"`) {
+		t.Fatal("expected the dashboard to show a plugin-update-icon for a newer cached version")
+	}
+	if !strings.Contains(html, "https://github.com/mscreations/billtracker-plugin/releases/tag/v1.1.0") {
+		t.Fatal("expected the update icon to link to the cached release URL")
+	}
+
+	// Now cache a version that is NOT newer than the manifest's reported
+	// 1.0.0 - the icon must not appear.
+	ts.App.PluginReleases.Set("bill-tracker", &release.Release{Version: "1.0.0"})
+	page2, err := ts.Client.Get(ts.URL + "/parent")
+	if err != nil {
+		t.Fatalf("GET /parent (up to date): %v", err)
+	}
+	defer page2.Body.Close()
+	body2, err := io.ReadAll(page2.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if strings.Contains(string(body2), `class="plugin-update-icon"`) {
+		t.Fatal("did not expect an update icon when the cached version is not newer")
 	}
 }
 

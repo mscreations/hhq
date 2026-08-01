@@ -263,6 +263,7 @@ func main() {
 
 	weatherCache := &weather.Cache{}
 	releaseCache := &release.Cache{}
+	pluginReleaseCache := &release.PluginCache{}
 
 	templateFuncs := template.FuncMap{
 		"colorName":       models.ColorName,
@@ -288,6 +289,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          &models.PluginStore{DB: conn},
 		Release:          releaseCache,
+		PluginReleases:   pluginReleaseCache,
 		Approval:         auth.NewApprovalLinkSigner(approvalSecret),
 		Invite:           auth.NewApprovalLinkSigner(inviteSecret),
 		PasswordReset:    auth.NewApprovalLinkSigner(passwordResetSecret),
@@ -366,6 +368,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          app.Plugins,
 		Release:          releaseCache,
+		PluginReleases:   pluginReleaseCache,
 		Version:          Version,
 	}
 

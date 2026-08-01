@@ -21,6 +21,7 @@ import (
 
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/plugins"
+	"github.com/mscreations/hhq/internal/release"
 )
 
 // runPluginSync periodically fetches synthetic calendar events from every
@@ -72,5 +73,53 @@ func (s *Scheduler) syncAllPlugins(ctx context.Context) {
 		} else {
 			logging.Debugf("scheduler: plugin %q synced successfully", p.ID)
 		}
+	}
+}
+
+// runPluginUpdateCheck periodically checks every plugin with a configured
+// repo_url for a newer published version, mirroring runReleaseCheck's shape
+// (check once immediately on startup, then on a ticker) - reuses
+// s.Cfg.ReleaseCheckInterval rather than a separate config knob, since this
+// is the same kind of cheap, infrequent GitHub poll as hhq's own
+// self-update check.
+func (s *Scheduler) runPluginUpdateCheck(ctx context.Context) {
+	s.checkPluginUpdates(ctx)
+	ticker := time.NewTicker(s.Cfg.ReleaseCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkPluginUpdates(ctx)
+		}
+	}
+}
+
+// checkPluginUpdates checks each registered plugin that has both a
+// repo_url and a currently-known Version against GitHub for a newer release,
+// caching the result in s.PluginReleases for the parent dashboard to read
+// (see internal/handlers/parent.go's buildParentDashboardData). Plugins with
+// no repo_url configured, or that haven't reported a version yet, are
+// silently skipped rather than logged - not misconfiguration, just an
+// optional feature not opted into.
+func (s *Scheduler) checkPluginUpdates(ctx context.Context) {
+	list, err := s.Plugins.ListAll(ctx)
+	if err != nil {
+		logging.Errorf("scheduler: listing plugins for update check: %v", err)
+		return
+	}
+
+	for _, p := range list {
+		if !p.RepoURL.Valid || p.RepoURL.String == "" || !p.Version.Valid || p.Version.String == "" {
+			continue
+		}
+		latest, err := release.CheckForUpdate(ctx, p.RepoURL.String, p.Version.String)
+		if err != nil {
+			logging.Debugf("scheduler: checking plugin %q for updates: %v", p.ID, err)
+			continue
+		}
+		s.PluginReleases.Set(p.ID, latest)
+		logging.Debugf("scheduler: plugin %q latest known version is %s", p.ID, latest.Version)
 	}
 }

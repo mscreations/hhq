@@ -42,3 +42,32 @@ func (c *Cache) Set(r *Release) {
 	defer c.mu.Unlock()
 	c.release = r
 }
+
+// PluginCache holds the most recently checked Release per plugin ID, the
+// same in-memory/no-persistence rationale as Cache - refreshed periodically
+// by the scheduler's checkPluginUpdates, driving the parent dashboard's
+// per-plugin update-available icon.
+type PluginCache struct {
+	mu       sync.RWMutex
+	releases map[string]*Release
+}
+
+// Get returns the cached release for plugin id, or (nil, false) if it
+// hasn't been checked yet (e.g. no repo_url configured, or the app just
+// started).
+func (c *PluginCache) Get(id string) (*Release, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	r, ok := c.releases[id]
+	return r, ok
+}
+
+// Set stores the latest checked release for plugin id.
+func (c *PluginCache) Set(id string, r *Release) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.releases == nil {
+		c.releases = make(map[string]*Release)
+	}
+	c.releases[id] = r
+}

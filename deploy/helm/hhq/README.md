@@ -26,7 +26,8 @@ field/key reference each one needs):
 | `hhq.existingSecrets.smtp`              | `hhq-smtp`           | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`                  |
 | `hhq.existingSecrets.db`                | `myapp-postgres-app` | `host`, `port`, `dbname`, `user`, `password` (CNPG shape)  |
 | `bootstrap.extraMounts[].secretName`    | (unset)              | One key per file referenced by a `calendars[].password_file` (see below) |
-| `plugins[].existingSecret`              | (unset)              | Plugin-specific, e.g. `ENCRYPTION_KEY` for billtracker-plugin |
+| `plugins[].existingSecret.app`          | (unset)              | Plugin-specific, e.g. `ENCRYPTION_KEY` for billtracker-plugin |
+| `plugins[].existingSecret.db`           | (unset)              | Only needed if that plugin's `useHhqDbSecret: false` - `host`, `port`, `dbname`, `user`, `password` (CNPG shape) |
 
 ## Bootstrap config files
 

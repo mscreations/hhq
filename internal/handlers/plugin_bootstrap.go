@@ -62,6 +62,8 @@ func (a *App) BootstrapPlugins(ctx context.Context, entries []config.PluginBoots
 			name = e.ID
 		}
 
+		repoURL := sql.NullString{String: e.RepoURL, Valid: e.RepoURL != ""}
+
 		existing, err := a.Plugins.GetByID(ctx, e.ID)
 		switch {
 		case errors.Is(err, models.ErrNotFound):
@@ -71,6 +73,7 @@ func (a *App) BootstrapPlugins(ctx context.Context, entries []config.PluginBoots
 				BaseURL:          e.BaseURL,
 				Enabled:          e.Enabled,
 				BootstrapManaged: true,
+				RepoURL:          repoURL,
 			}); err != nil {
 				logging.Errorf("bootstrap: creating plugin %q: %v", e.ID, err)
 				continue
@@ -83,7 +86,7 @@ func (a *App) BootstrapPlugins(ctx context.Context, entries []config.PluginBoots
 			logging.Warnf("bootstrap: skipping %q - a plugin with this id already exists and wasn't created via bootstrap", e.ID)
 			continue
 		default:
-			if err := a.Plugins.UpdateBootstrap(ctx, e.ID, name, e.BaseURL, e.Enabled); err != nil {
+			if err := a.Plugins.UpdateBootstrap(ctx, e.ID, name, e.BaseURL, e.Enabled, repoURL); err != nil {
 				logging.Errorf("bootstrap: updating plugin %q: %v", e.ID, err)
 				continue
 			}

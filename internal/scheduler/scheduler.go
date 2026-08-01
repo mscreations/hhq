@@ -52,6 +52,7 @@ type Scheduler struct {
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
 	Release          *release.Cache
+	PluginReleases   *release.PluginCache
 
 	// Version is the running app's version (see main.Version), used only to
 	// decide which of GitHub's APIs runReleaseCheck polls - see checkRelease.
@@ -69,6 +70,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	go s.runWeatherRefresh(ctx)
 	go s.runPluginSync(ctx)
 	go s.runReleaseCheck(ctx)
+	go s.runPluginUpdateCheck(ctx)
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {

@@ -93,7 +93,7 @@ type parentDashboardData struct {
 	// the Pending Approvals card - avoids adding avatar columns to
 	// ChoreInstance's own JOIN queries (see avatarURLsByUserID in kiosk.go).
 	ChildAvatarByID map[int]string
-	Plugins         []models.Plugin
+	Plugins         []PluginRow
 	// PluginSettingsError is set when PluginSettingsPage couldn't reach a
 	// plugin - read back from the redirect query param the same way
 	// InviteError/SettingsError are, so the dashboard can show it in a modal
@@ -239,6 +239,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 	if err != nil {
 		return nil, err
 	}
+	pluginRows := a.buildPluginRows(pluginList)
 
 	// Pending approvals: pull this week's instances and filter client-side here
 	// since it's a small dataset; fine to optimize with a dedicated query later.
@@ -278,7 +279,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		ChoreDefsByParent:     groupChoreDefsByUser(parents, choreDefs),
 		PendingApprovals:      pending,
 		ChildAvatarByID:       avatarByID,
-		Plugins:               pluginList,
+		Plugins:               pluginRows,
 		PluginSettingsError:   r.URL.Query().Get("plugin_settings_error"),
 		CSRFToken:             a.SessionMgr.CSRFToken(a.CSRF, r),
 		InviteError:           r.URL.Query().Get("invite_error"),
@@ -300,6 +301,40 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		UpdateAvailable:       updateAvailable,
 		LatestReleaseURL:      latestReleaseURL,
 	}, nil
+}
+
+// PluginRow wraps a models.Plugin with the dashboard's per-plugin
+// update-available check (see buildPluginRows) - kept separate from
+// models.Plugin itself since UpdateAvailable/LatestVersion/LatestReleaseURL
+// are derived per-request from a.PluginReleases, not stored on the plugin.
+type PluginRow struct {
+	models.Plugin
+	UpdateAvailable  bool
+	LatestVersion    string
+	LatestReleaseURL string
+}
+
+// buildPluginRows pairs each plugin with the scheduler's cached
+// update-check result (see scheduler.checkPluginUpdates), mirroring
+// checkUpdateAvailable's app-level logic per plugin instead of just once
+// for hhq itself. A plugin with no repo_url configured, no reported
+// version, or nothing cached yet simply gets UpdateAvailable = false.
+func (a *App) buildPluginRows(plugins []models.Plugin) []PluginRow {
+	rows := make([]PluginRow, len(plugins))
+	for i, p := range plugins {
+		rows[i] = PluginRow{Plugin: p}
+		if a.PluginReleases == nil || !p.RepoURL.Valid || !p.Version.Valid {
+			continue
+		}
+		latest, ok := a.PluginReleases.Get(p.ID)
+		if !ok || !release.IsNewer(p.Version.String, latest.Version) {
+			continue
+		}
+		rows[i].UpdateAvailable = true
+		rows[i].LatestVersion = latest.Version
+		rows[i].LatestReleaseURL = latest.URL
+	}
+	return rows
 }
 
 // checkUpdateAvailable compares the running version against the latest

@@ -18,6 +18,10 @@
       </td>
       <td>
         {{if .Version.Valid}}{{.Version.String}}{{else}}<span class="hint">—</span>{{end}}
+        {{if .UpdateAvailable}}
+          <a class="plugin-update-icon" href="{{.LatestReleaseURL}}" target="_blank" rel="noopener"
+             title="Update available: v{{.LatestVersion}}">&#8593;</a>
+        {{end}}
       </td>
       <td>
         <form method="POST" action="/parent/plugins/{{.ID}}/toggle"

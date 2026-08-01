@@ -13,7 +13,11 @@ data:
   plugins.json: |
     {{- $entries := list }}
     {{- range .Values.plugins }}
-    {{- $entries = append $entries (dict "id" .name "name" (.displayName | default .name) "base_url" (printf "http://localhost:%v" .port) "enabled" true) }}
+    {{- $entry := dict "id" .name "name" (.displayName | default .name) "base_url" (printf "http://localhost:%v" .port) "enabled" true }}
+    {{- if .repoURL }}
+    {{- $entry = merge $entry (dict "repo_url" .repoURL) }}
+    {{- end }}
+    {{- $entries = append $entries $entry }}
     {{- end }}
     {{- toJson $entries | nindent 4 }}
 {{- range .Values.plugins }}

@@ -63,7 +63,14 @@ type githubTag struct {
 // workflow only cuts a GitHub Release on main-branch (non "-dev") tags, this
 // naturally means "the latest promoted version".
 func FetchLatest(ctx context.Context) (*Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LatestReleaseURL, nil)
+	return FetchLatestFromRepo(ctx, LatestReleaseURL)
+}
+
+// FetchLatestFromRepo is FetchLatest generalized to an arbitrary GitHub
+// "releases/latest" API URL, so it can also check a plugin's own repo (see
+// CheckForUpdate) rather than only hhq's own hardcoded LatestReleaseURL.
+func FetchLatestFromRepo(ctx context.Context, releaseURL string) (*Release, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +107,14 @@ func FetchLatest(ctx context.Context) (*Release, error) {
 // actual newest tag, only main's. Paginates up to maxTagPages pages (100
 // tags/page) to bound the number of requests against a long-lived repo.
 func FetchLatestTag(ctx context.Context) (*Release, error) {
+	return FetchLatestTagFromRepo(ctx, LatestTagsURL, RepoWebURL)
+}
+
+// FetchLatestTagFromRepo is FetchLatestTag generalized to an arbitrary
+// GitHub "tags" API URL + repo web URL, so it can also check a plugin's own
+// repo (see CheckForUpdate) rather than only hhq's own hardcoded
+// LatestTagsURL/RepoWebURL.
+func FetchLatestTagFromRepo(ctx context.Context, tagsURL, repoWebURL string) (*Release, error) {
 	const perPage = 100
 	const maxTagPages = 10
 
@@ -107,7 +122,7 @@ func FetchLatestTag(ctx context.Context) (*Release, error) {
 	var bestTag string
 
 	for page := 1; page <= maxTagPages; page++ {
-		url := fmt.Sprintf("%s?per_page=%d&page=%d", LatestTagsURL, perPage, page)
+		url := fmt.Sprintf("%s?per_page=%d&page=%d", tagsURL, perPage, page)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
@@ -156,7 +171,7 @@ func FetchLatestTag(ctx context.Context) (*Release, error) {
 	return &Release{
 		FetchedAt: time.Now(),
 		Version:   strings.TrimPrefix(bestTag, "v"),
-		URL:       tagURL(bestTag),
+		URL:       tagURL(repoWebURL, bestTag),
 	}, nil
 }
 
@@ -164,11 +179,34 @@ func FetchLatestTag(ctx context.Context) (*Release, error) {
 // namely every dev-branch "-dev" tag) unless the tag looks like a promoted
 // release tag (no "-dev" suffix), in which case it links to the actual
 // Release page as FetchLatest's results do.
-func tagURL(tag string) string {
+func tagURL(repoWebURL, tag string) string {
 	if strings.HasSuffix(tag, "-dev") {
-		return RepoWebURL + "/tree/" + tag
+		return repoWebURL + "/tree/" + tag
 	}
-	return RepoWebURL + "/releases/tag/" + tag
+	return repoWebURL + "/releases/tag/" + tag
+}
+
+// RepoAPIURLs derives a GitHub repo's "releases/latest" and "tags" API URLs
+// from its web URL (e.g. "https://github.com/owner/repo"), for checking a
+// plugin's own repo the same way hhq checks itself - see CheckForUpdate.
+func RepoAPIURLs(repoWebURL string) (releaseURL, tagsURL string) {
+	repoWebURL = strings.TrimSuffix(repoWebURL, "/")
+	apiBase := strings.Replace(repoWebURL, "https://github.com/", "https://api.github.com/repos/", 1)
+	return apiBase + "/releases/latest", apiBase + "/tags"
+}
+
+// CheckForUpdate checks repoWebURL's GitHub repo for a version newer than
+// currentVersion, the per-plugin equivalent of the scheduler's own
+// checkRelease for hhq itself. Mirrors checkRelease's release-vs-tag
+// selection: a "-dev" currentVersion checks the tags API (dev builds only
+// ever get a git tag, never a GitHub Release), anything else checks
+// releases/latest.
+func CheckForUpdate(ctx context.Context, repoWebURL, currentVersion string) (*Release, error) {
+	releaseURL, tagsURL := RepoAPIURLs(repoWebURL)
+	if strings.HasSuffix(currentVersion, "-dev") {
+		return FetchLatestTagFromRepo(ctx, tagsURL, repoWebURL)
+	}
+	return FetchLatestFromRepo(ctx, releaseURL)
 }
 
 // IsNewer reports whether latest is a newer version than current, per this

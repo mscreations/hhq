@@ -50,6 +50,7 @@ type App struct {
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
 	Release          *release.Cache
+	PluginReleases   *release.PluginCache
 
 	SessionMgr       *auth.SessionManager
 	Approval         *auth.ApprovalLinkSigner
