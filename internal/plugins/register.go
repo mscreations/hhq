@@ -37,15 +37,27 @@ type registerResponse struct {
 	Token string `json:"token"`
 }
 
-// Register calls POST {baseURL}/register and returns the plugin-issued
-// token. Deliberately unauthenticated - trust is established by whichever
-// caller reaches a freshly-started plugin's /register first (intended to be
-// hhq, on its own first successful contact with that plugin). A plugin is
-// expected to reject any call to /register once it has already issued a
-// token (see billtracker-plugin's Register handler), so this is only ever
-// meaningful to call once per plugin - see tryRegisterAndRefresh, which
-// only calls it when the plugin's stored token is still empty.
-func Register(ctx context.Context, baseURL string) (string, error) {
+// connectionSecretHeader carries the shared connection secret (see
+// config.Config.PluginConnectionSecret) on every POST /register call - a
+// plugin checks this before issuing/reissuing a token, which is what makes
+// /register safe to call more than once per plugin (see PLUGINS.md's
+// "Authentication: self-registration").
+const connectionSecretHeader = "X-Plugin-Connection-Secret"
+
+// Register calls POST {baseURL}/register (with the shared connection
+// secret) and returns the plugin-issued token. A plugin verifies
+// connectionSecret before doing anything else, rejecting a mismatch with
+// 401 (wrapped here as ErrConnectionSecretMismatch - deliberately distinct
+// from the 403 every other route uses for a stale bearer token, since a bad
+// connection secret is an operator misconfiguration retrying won't fix, not
+// a token that'll resolve itself on the next re-registration) - the secret,
+// not "first caller wins," is what protects this endpoint. On a valid
+// secret, the plugin issues a fresh token every time, overwriting any it
+// had previously issued - this is what lets tryRegisterAndRefresh
+// (startup/periodic path) and reregisterPlugin (403 recovery path, see
+// internal/handlers/plugin_auth.go) both call this safely, not just once
+// per plugin's lifetime.
+func Register(ctx context.Context, baseURL, connectionSecret string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, registerTimeout)
 	defer cancel()
 
@@ -53,11 +65,15 @@ func Register(ctx context.Context, baseURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set(connectionSecretHeader, connectionSecret)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("registering: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", fmt.Errorf("registering: %w - check that PLUGIN_CONNECTION_SECRET matches on both hhq and the plugin", ErrConnectionSecretMismatch)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("registering: unexpected status %d", resp.StatusCode)
 	}

@@ -156,11 +156,6 @@ CREATE TABLE hhq_plugins (
     name                TEXT NOT NULL,
     base_url            TEXT NOT NULL,
     enabled             BOOLEAN NOT NULL DEFAULT TRUE,
-    -- Cached from the plugin's last successful GET /manifest fetch: whether
-    -- this plugin gets a kiosk nav button + full-screen GET /view.
-    view_enabled        BOOLEAN NOT NULL DEFAULT FALSE,
-    view_label          TEXT,
-    view_icon           TEXT,
     provides_events     BOOLEAN NOT NULL DEFAULT FALSE,
     -- The dedicated synthetic calendar this plugin's events are upserted
     -- into (auto-created the first time a provides_events plugin registers).
@@ -191,6 +186,22 @@ CREATE TABLE hhq_plugins (
     last_healthy_at     TIMESTAMPTZ,
     last_error          TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A plugin can register more than one kiosk nav button/view. Each view gets
+-- its own row here, keyed by the plugin's own stable view id (a slug, used
+-- as a URL path segment the same way the plugin id itself is - see
+-- internal/handlers/plugins.go). The whole set for a plugin is replaced on
+-- every manifest refresh (see models.PluginStore.ReplaceViews), so there's
+-- no separate "enabled" column to keep in sync - a view not currently
+-- enabled in the plugin's manifest simply isn't in this table.
+CREATE TABLE hhq_plugin_views (
+    plugin_id  TEXT NOT NULL REFERENCES hhq_plugins(id) ON DELETE CASCADE,
+    view_id    TEXT NOT NULL,
+    label      TEXT NOT NULL,
+    icon       TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (plugin_id, view_id)
 );
 
 CREATE TYPE chore_status AS ENUM ('incomplete', 'pending_approval', 'approved', 'rejected');
@@ -285,6 +296,7 @@ DROP TABLE hhq_chore_instances;
 DROP TABLE hhq_chore_definitions;
 DROP TABLE hhq_chores;
 DROP TYPE chore_status;
+DROP TABLE hhq_plugin_views;
 DROP TABLE hhq_plugins;
 DROP TABLE hhq_calendar_events_cache;
 DROP TABLE hhq_calendars;

@@ -1,0 +1,26 @@
+{{define "kiosk/_week_day_chores"}}
+<ul id="week-chores-{{.DateKey}}" class="week-chore-list">
+  {{if .Chores}}
+  {{range .Chores}}
+  <li class="chore-item chore-status-{{.Status}}{{if .IsLate}} chore-late{{end}}"
+      style="border-left-color: {{.ChildColor}}"
+      {{if or (eq (printf "%v" .Status) "incomplete") (eq (printf "%v" .Status) "rejected")}}
+      {{if .Description.Valid}}
+      onclick="openChoreConfirm({{.ID}}, {{.ChoreName}}, {{.Description.String}}, 'week', '{{$.DateKey}}')"
+      {{else}}
+      hx-post="/kiosk/chores/{{.ID}}/complete?view=week&day={{$.DateKey}}" hx-target="#week-chores-{{$.DateKey}}" hx-swap="outerHTML"
+      {{end}}
+      {{end}}
+      data-chore-id="{{.ID}}">
+    <span class="chore-name">{{.ChildName}}: {{.ChoreName}}</span>
+    {{if .IsLate}}<span class="chore-late-badge">LATE</span>{{end}}
+    {{if eq (printf "%v" .Status) "approved"}}<span class="chore-star">★</span>{{end}}
+    {{if eq (printf "%v" .Status) "pending_approval"}}<span class="chore-pending">awaiting parent...</span>{{end}}
+    {{if eq (printf "%v" .Status) "rejected"}}<span class="chore-rejected">tap to try again</span>{{end}}
+  </li>
+  {{end}}
+  {{else}}
+  <li class="empty-state">No chores today.</li>
+  {{end}}
+</ul>
+{{end}}

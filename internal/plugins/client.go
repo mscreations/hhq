@@ -38,16 +38,19 @@ const eventsTimeout = 10 * time.Second
 // healthzTimeout bounds the GET /healthz check.
 const healthzTimeout = 3 * time.Second
 
-// FetchView calls GET {baseURL}/view and returns the raw HTML fragment
-// body, to be inlined server-side into the kiosk's full-screen content
-// region (see internal/handlers/plugins.go's KioskPluginView). The response
-// is never forwarded to the browser directly - only ever fetched
-// server-to-server.
-func FetchView(ctx context.Context, baseURL, token string) (string, error) {
+// FetchView calls GET {baseURL}/view/{viewID} and returns the raw HTML
+// fragment body, to be inlined server-side into the kiosk's full-screen
+// content region (see internal/handlers/plugins.go's KioskPluginView). The
+// response is never forwarded to the browser directly - only ever fetched
+// server-to-server. viewID is one of the ids the plugin listed in its own
+// GET /manifest response (Manifest.Views) - a plugin with only one view
+// still needs to give it a stable id, since there's no longer an id-less
+// GET /view route.
+func FetchView(ctx context.Context, baseURL, token, viewID string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, viewTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/view", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/view/"+viewID, nil)
 	if err != nil {
 		return "", err
 	}
@@ -57,6 +60,9 @@ func FetchView(ctx context.Context, baseURL, token string) (string, error) {
 		return "", fmt.Errorf("fetching view: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("fetching view: %w", ErrForbidden)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("fetching view: unexpected status %d", resp.StatusCode)
 	}
@@ -119,6 +125,9 @@ func FetchEvents(ctx context.Context, baseURL, token string, from, to time.Time)
 		return nil, fmt.Errorf("fetching events: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("fetching events: %w", ErrForbidden)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching events: unexpected status %d", resp.StatusCode)
 	}
@@ -163,6 +172,9 @@ func PostAction(ctx context.Context, baseURL, token, actionID, uid string) error
 		return fmt.Errorf("posting action %s: %w", actionID, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("posting action %s: %w", actionID, ErrForbidden)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("posting action %s: unexpected status %d", actionID, resp.StatusCode)
 	}

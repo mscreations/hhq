@@ -30,21 +30,24 @@ import (
 	"github.com/mscreations/hhq/internal/plugins"
 )
 
-// pluginNavItem is one plugin's kiosk nav button: its label and icon HTML,
-// trusted verbatim (see internal/plugins' package doc for the trust
-// boundary this implies).
+// pluginNavItem is one nav button on the kiosk: a single (plugin, view)
+// pair, since a plugin can now register more than one view - each gets its
+// own button (see models.PluginView). Label/IconHTML are trusted verbatim
+// (see internal/plugins' package doc for the trust boundary this implies).
 type pluginNavItem struct {
-	ID       string
+	PluginID string
+	ViewID   string
 	Label    string
 	IconHTML template.HTML
 }
 
-// buildPluginNavItems lists every enabled, view-producing plugin for the
-// kiosk's nav bar (see KioskIndex/KioskFragmentHome). Unlike the old widget
-// mechanism, this doesn't fetch each plugin's content up front - a plugin's
-// GET /view is only ever fetched on demand, when its nav button is tapped
-// (see KioskPluginView), so a slow/down plugin can't affect the initial
-// kiosk page load.
+// buildPluginNavItems lists every registered view of every enabled plugin
+// for the kiosk's nav bar (see KioskIndex/KioskFragmentHome) - one button
+// per view, not per plugin. Unlike the old widget mechanism, this doesn't
+// fetch each view's content up front - a plugin's GET /view/{id} is only
+// ever fetched on demand, when its nav button is tapped (see
+// KioskPluginView), so a slow/down plugin can't affect the initial kiosk
+// page load.
 func (a *App) buildPluginNavItems(ctx context.Context) []pluginNavItem {
 	list, err := a.Plugins.ListViews(ctx)
 	if err != nil {
@@ -53,25 +56,31 @@ func (a *App) buildPluginNavItems(ctx context.Context) []pluginNavItem {
 	}
 
 	items := make([]pluginNavItem, 0, len(list))
-	for _, p := range list {
+	for _, v := range list {
 		items = append(items, pluginNavItem{
-			ID:       p.ID,
-			Label:    p.ViewLabel.String,
-			IconHTML: template.HTML(p.ViewIcon.String),
+			PluginID: v.PluginID,
+			ViewID:   v.ViewID,
+			Label:    v.Label,
+			IconHTML: template.HTML(v.Icon),
 		})
 	}
 	return items
 }
 
-// KioskPluginView backs a plugin's nav button (GET /kiosk/view/plugin/{id}):
-// fetches that plugin's GET /view and wraps it for display in the kiosk's
-// full-screen content region. A plugin that's unreachable or unknown/
-// disabled renders an empty state rather than an error blob on an always-on
-// wall display.
+// KioskPluginView backs a plugin view's nav button
+// (GET /kiosk/view/plugin/{id}/{viewID}): fetches that view's GET
+// /view/{viewID} and wraps it for display in the kiosk's full-screen
+// content region. A plugin that's unreachable or unknown/disabled renders
+// an empty state rather than an error blob on an always-on wall display. An
+// unrecognized viewID is not checked against the currently-cached
+// hhq_plugin_views set here - it's just passed straight through to the
+// plugin, so a stale/removed view naturally falls into the same
+// "unavailable" handling as any other fetch failure below.
 func (a *App) KioskPluginView(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	viewID := chi.URLParam(r, "viewID")
 	plugin, err := a.Plugins.GetByID(r.Context(), id)
-	if err != nil || !plugin.Enabled || !plugin.ViewEnabled {
+	if err != nil || !plugin.Enabled {
 		a.renderFragment(w, "kiosk/_plugin_view", template.HTML(""))
 		return
 	}
@@ -83,9 +92,11 @@ func (a *App) KioskPluginView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, err := plugins.FetchView(r.Context(), plugin.BaseURL, token)
+	html, err := retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (string, error) {
+		return plugins.FetchView(r.Context(), plugin.BaseURL, token, viewID)
+	})
 	if err != nil {
-		logging.Warnf("kiosk: fetching view from plugin %q failed: %v", id, err)
+		logging.Warnf("kiosk: fetching view %q from plugin %q failed: %v", viewID, id, err)
 		_ = a.Plugins.MarkHealth(r.Context(), id, err)
 		a.renderFragment(w, "kiosk/_plugin_view", pluginUnavailableHTML(plugin.Name))
 		return
@@ -171,7 +182,10 @@ func (a *App) KioskEventAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := plugins.PostAction(r.Context(), plugin.BaseURL, token, actionID, event.UID); err != nil {
+	_, err = retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (struct{}, error) {
+		return struct{}{}, plugins.PostAction(r.Context(), plugin.BaseURL, token, actionID, event.UID)
+	})
+	if err != nil {
 		logging.Errorf("kiosk: plugin %q action %q failed for event uid=%q: %v", plugin.ID, actionID, event.UID, err)
 		http.Error(w, "action failed: "+err.Error(), http.StatusBadGateway)
 		return
@@ -184,6 +198,7 @@ func (a *App) KioskEventAction(w http.ResponseWriter, r *http.Request) {
 		Events:           a.Events,
 		CalendarAccounts: a.CalendarAccounts,
 		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
 	}
 	if err := sc.SyncOne(r.Context(), *plugin, a.Cfg.CalendarWindowDays); err != nil {
 		logging.Warnf("kiosk: resync after plugin %q action %q: %v", plugin.ID, actionID, err)
@@ -243,13 +258,18 @@ func (a *App) PluginSettingsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := plugins.ProxySettings(w, r, plugin.BaseURL, token, a.SessionMgr.CSRFToken(a.CSRF, r)); err != nil {
+	csrfToken := a.SessionMgr.CSRFToken(a.CSRF, r)
+	_, err = retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (struct{}, error) {
+		return struct{}{}, plugins.ProxySettings(w, r, plugin.BaseURL, token, csrfToken)
+	})
+	if err != nil {
 		// ProxySettings only returns an error when it couldn't reach the
-		// plugin at all (see its doc comment) - nothing was written to w yet,
-		// so redirect back to the dashboard with a simple message shown in a
-		// modal (buildParentDashboardData/dashboard.html), matching the
-		// dashboard's existing look/feel instead of navigating to a bare page
-		// with a raw dial error.
+		// plugin at all, or when it returned 403 and the one-shot reauth-retry
+		// (callWithReauth) also failed (see both doc comments) - in every case
+		// nothing was written to w yet, so redirect back to the dashboard with
+		// a simple message shown in a modal (buildParentDashboardData/
+		// dashboard.html), matching the dashboard's existing look/feel instead
+		// of navigating to a bare page with a raw dial error.
 		logging.Warnf("parent: plugin %q settings page unreachable: %v", id, err)
 		_ = a.Plugins.MarkHealth(r.Context(), id, err)
 		msg := fmt.Sprintf("%s isn't reachable right now. Make sure the plugin is running, then try again.", plugin.Name)

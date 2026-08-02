@@ -130,10 +130,10 @@ type AssignmentBootstrap struct {
 	OneOffDate string `json:"one_off_date"`
 }
 
-// assignmentBootstrapChore is one entry in an assignments.json child's chore
-// list - AssignmentBootstrap minus Child, which comes from the enclosing
-// object key instead.
-type assignmentBootstrapChore struct {
+// assignmentEntry is one chore assignment as written under a child's key in
+// assignments.json - everything AssignmentBootstrap has except Child, which
+// comes from the enclosing map key instead.
+type assignmentEntry struct {
 	Chore      string   `json:"chore"`
 	Points     int      `json:"points"`
 	DaysOfWeek []string `json:"days_of_week"`
@@ -141,9 +141,8 @@ type assignmentBootstrapChore struct {
 }
 
 // ParseAssignmentsBootstrap unmarshals CONFIG_DIR/assignments.json's
-// contents - a JSON object keyed by child name (matched against
-// children.json/the Children card), each value a JSON array of that child's
-// chore assignments, e.g.:
+// contents - a JSON object keyed by child name, each holding an array of
+// that child's chore assignments, e.g.:
 //
 //	{
 //	  "Alex": [
@@ -154,12 +153,11 @@ type assignmentBootstrapChore struct {
 //	  ]
 //	}
 //
-// Child names are visited in sorted order so results (and any log output
-// from BootstrapAssignments) are deterministic run to run. Per-entry
-// validation (unknown child/chore, invalid schedule) happens later in
-// BootstrapAssignments, not here.
+// Per-entry validation (unknown child/chore, invalid schedule) happens later
+// in BootstrapAssignments, not here. Child names are processed in sorted
+// order so the resulting entry order is deterministic.
 func ParseAssignmentsBootstrap(raw string) ([]AssignmentBootstrap, error) {
-	var byChild map[string][]assignmentBootstrapChore
+	var byChild map[string][]assignmentEntry
 	if err := json.Unmarshal([]byte(raw), &byChild); err != nil {
 		return nil, fmt.Errorf("parsing assignments.json: %w", err)
 	}
@@ -172,13 +170,13 @@ func ParseAssignmentsBootstrap(raw string) ([]AssignmentBootstrap, error) {
 
 	var entries []AssignmentBootstrap
 	for _, child := range children {
-		for _, c := range byChild[child] {
+		for _, e := range byChild[child] {
 			entries = append(entries, AssignmentBootstrap{
 				Child:      child,
-				Chore:      c.Chore,
-				Points:     c.Points,
-				DaysOfWeek: c.DaysOfWeek,
-				OneOffDate: c.OneOffDate,
+				Chore:      e.Chore,
+				Points:     e.Points,
+				DaysOfWeek: e.DaysOfWeek,
+				OneOffDate: e.OneOffDate,
 			})
 		}
 	}

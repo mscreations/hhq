@@ -54,19 +54,62 @@ type kioskViewData struct {
 	Plugins        []pluginNavItem
 }
 
+// kioskIndexData is the top-level kiosk/index page's template data. Which
+// view (classic 3-column vs. 5-day) seeds #kiosk-view - and therefore which
+// concrete type .Home holds - is decided once per page load from the
+// kiosk_layout setting; see KioskIndex.
+type kioskIndexData struct {
+	AppTitle string
+	// HomeIsWeek picks which template kiosk/index.html embeds into
+	// #kiosk-view - "kiosk/_week" (with .Home holding *kioskWeekViewData) or
+	// "kiosk/_home" (with .Home holding *kioskViewData).
+	HomeIsWeek     bool
+	Home           any
+	ParentLoggedIn bool
+	Weather        weatherViewData
+	Plugins        []pluginNavItem
+}
+
 // KioskIndex renders the full kiosk page. No authentication — this is the
 // always-on wall display, per the project requirements.
+//
+// The kiosk_layout setting is read once here, at page-load time, to decide
+// which view is "Home". This is a deliberate simplification: a settings
+// change doesn't hot-swap the already-rendered nav bar without a page
+// reload/refresh - there's no existing precedent in this app for reactive
+// settings, and kiosk devices already reload periodically in practice.
 func (a *App) KioskIndex(w http.ResponseWriter, r *http.Request) {
-	data, err := a.buildKioskViewData(r)
+	ctx := r.Context()
+	layout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutClassic)
 	if err != nil {
 		http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// The plugin nav bar only needs to be built for the full page load - the
-	// home/agenda/calendar/chores fragments never render .Plugins.
-	data.Plugins = a.buildPluginNavItems(r.Context())
+
+	idata := kioskIndexData{HomeIsWeek: layout == kioskLayoutWeekly}
+	if idata.HomeIsWeek {
+		data, err := a.buildKioskWeekViewData(r)
+		if err != nil {
+			http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		idata.Home = data
+		idata.AppTitle, idata.ParentLoggedIn, idata.Weather, idata.Plugins = data.AppTitle, data.ParentLoggedIn, data.Weather, data.Plugins
+	} else {
+		data, err := a.buildKioskViewData(r)
+		if err != nil {
+			http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// The plugin nav bar only needs to be built for the full page load -
+		// the home/agenda/calendar/chores fragments never render .Plugins.
+		data.Plugins = a.buildPluginNavItems(ctx)
+		idata.Home = data
+		idata.AppTitle, idata.ParentLoggedIn, idata.Weather, idata.Plugins = data.AppTitle, data.ParentLoggedIn, data.Weather, data.Plugins
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := a.Templates.ExecuteTemplate(w, "kiosk/index", data); err != nil {
+	if err := a.Templates.ExecuteTemplate(w, "kiosk/index", idata); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -203,6 +246,15 @@ func (a *App) KioskCompleteChore(w http.ResponseWriter, r *http.Request) {
 		// Assigned to a parent (informational only) - MarkComplete already
 		// jumped straight to 'approved', no approval step or email needed.
 		logging.Infof("kiosk: chore instance id=%d (parent-assigned, informational) marked approved", id)
+	}
+
+	// Chores tapped from the 5-day view carry ?view=week&day=... (see
+	// kiosk/_week_day_chores.html) so only that one day's chore column gets
+	// re-rendered, instead of rebuilding the whole 5-day kioskWeekViewData
+	// for a single-row change.
+	if r.URL.Query().Get("view") == kioskWeekViewQueryValue {
+		a.renderWeekDayChoresFragment(w, r, r.URL.Query().Get("day"))
+		return
 	}
 
 	data, err := a.buildKioskViewData(r)

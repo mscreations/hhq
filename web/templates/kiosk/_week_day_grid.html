@@ -1,0 +1,30 @@
+{{define "kiosk/_week_day_allday"}}
+<div class="week-allday-cell{{if .IsToday}} week-allday-cell-today{{end}}">
+  {{range .Events}}
+  {{if .AllDay}}
+  <div class="week-allday-chip" style="border-left-color: {{.CalendarColor}}" title="{{.AccountName}}/{{.CalendarName}}"
+       hx-get="/kiosk/events/{{.ID}}" hx-target="#event-modal-body" hx-swap="innerHTML"
+       hx-on::before-request="document.getElementById('event-modal').classList.add('open')">
+    {{.Summary}}
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
+
+{{define "kiosk/_week_day_track"}}
+<div class="week-grid-track{{if .IsToday}} week-grid-track-today{{end}}">
+  {{if .IsToday}}<div id="now-line-{{.DateKey}}" class="now-line" data-date="{{.DateKey}}"></div>{{end}}
+  {{range .Events}}
+  {{if not .AllDay}}
+  <div class="week-event-block{{if .Clipped}} week-event-clipped{{end}}"
+       style="top: {{.TopPct}}%; height: {{.HeightPct}}%; background: {{.CalendarColor}}"
+       title="{{.AccountName}}/{{.CalendarName}}"
+       hx-get="/kiosk/events/{{.ID}}" hx-target="#event-modal-body" hx-swap="innerHTML"
+       hx-on::before-request="document.getElementById('event-modal').classList.add('open')">
+    <span class="week-event-summary">{{.Summary}}</span>
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}

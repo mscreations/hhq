@@ -41,9 +41,21 @@ type Release struct {
 // internal/weather uses for ForecastURL.
 var LatestReleaseURL = "https://api.github.com/repos/mscreations/hhq/releases/latest"
 
+// LatestTagsURL is FetchLatestTag's GitHub API endpoint, overridable in tests
+// the same way as LatestReleaseURL.
+var LatestTagsURL = "https://api.github.com/repos/mscreations/hhq/tags"
+
+// RepoWebURL is the repo's human-facing (non-API) base URL, used to build a
+// link for a tag that has no GitHub Release object. Overridable in tests.
+var RepoWebURL = "https://github.com/mscreations/hhq"
+
 type githubRelease struct {
 	TagName string `json:"tag_name"`
 	HTMLURL string `json:"html_url"`
+}
+
+type githubTag struct {
+	Name string `json:"name"`
 }
 
 // FetchLatest calls GitHub's "latest release" endpoint, which only ever
@@ -51,7 +63,15 @@ type githubRelease struct {
 // workflow only cuts a GitHub Release on main-branch (non "-dev") tags, this
 // naturally means "the latest promoted version".
 func FetchLatest(ctx context.Context) (*Release, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, LatestReleaseURL, nil)
+	return FetchLatestFromRepo(ctx, LatestReleaseURL)
+}
+
+// FetchLatestFromRepo is FetchLatest generalized to an arbitrary GitHub
+// "releases/latest" API URL rather than only hhq's own hardcoded
+// LatestReleaseURL - used by FetchLatest, and by tests pointing at a local
+// httptest server.
+func FetchLatestFromRepo(ctx context.Context, releaseURL string) (*Release, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +97,94 @@ func FetchLatest(ctx context.Context) (*Release, error) {
 		Version:   strings.TrimPrefix(parsed.TagName, "v"),
 		URL:       parsed.HTMLURL,
 	}, nil
+}
+
+// FetchLatestTag calls GitHub's tags API and returns the highest-versioned
+// tag in the repo, regardless of whether a GitHub Release exists for it.
+// Dev builds need this instead of FetchLatest: every push to the dev branch
+// gets a "vX.Y.Z-dev" tag (see .github/actions/compute-next-dev-tag), but a
+// GitHub Release is only ever cut when dev is promoted to main
+// (version-main.yml) - so /releases/latest never reflects a dev build's
+// actual newest tag, only main's. Paginates up to maxTagPages pages (100
+// tags/page) to bound the number of requests against a long-lived repo.
+func FetchLatestTag(ctx context.Context) (*Release, error) {
+	return FetchLatestTagFromRepo(ctx, LatestTagsURL, RepoWebURL)
+}
+
+// FetchLatestTagFromRepo is FetchLatestTag generalized to an arbitrary
+// GitHub "tags" API URL + repo web URL rather than only hhq's own hardcoded
+// LatestTagsURL/RepoWebURL - used by FetchLatestTag, and by tests pointing
+// at a local httptest server.
+func FetchLatestTagFromRepo(ctx context.Context, tagsURL, repoWebURL string) (*Release, error) {
+	const perPage = 100
+	const maxTagPages = 10
+
+	var best *semver
+	var bestTag string
+
+	for page := 1; page <= maxTagPages; page++ {
+		url := fmt.Sprintf("%s?per_page=%d&page=%d", tagsURL, perPage, page)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("release: requesting tags (page %d): %w", page, err)
+		}
+
+		var tags []githubTag
+		decodeErr := json.NewDecoder(resp.Body).Decode(&tags)
+		status := resp.Status
+		statusCode := resp.StatusCode
+		resp.Body.Close()
+
+		if statusCode != http.StatusOK {
+			return nil, fmt.Errorf("release: tags request returned %s", status)
+		}
+		if decodeErr != nil {
+			return nil, fmt.Errorf("release: decoding tags response: %w", decodeErr)
+		}
+
+		for _, t := range tags {
+			v, ok := parseVersion(strings.TrimPrefix(t.Name, "v"))
+			if !ok {
+				continue
+			}
+			if best == nil || compareVersions(v, *best) > 0 {
+				vCopy := v
+				best = &vCopy
+				bestTag = t.Name
+			}
+		}
+
+		if len(tags) < perPage {
+			break
+		}
+	}
+
+	if best == nil {
+		return nil, fmt.Errorf("release: no version-shaped tags found")
+	}
+
+	return &Release{
+		FetchedAt: time.Now(),
+		Version:   strings.TrimPrefix(bestTag, "v"),
+		URL:       tagURL(repoWebURL, bestTag),
+	}, nil
+}
+
+// tagURL links to a tag's tree view (no GitHub Release exists for most tags,
+// namely every dev-branch "-dev" tag) unless the tag looks like a promoted
+// release tag (no "-dev" suffix), in which case it links to the actual
+// Release page as FetchLatest's results do.
+func tagURL(repoWebURL, tag string) string {
+	if strings.HasSuffix(tag, "-dev") {
+		return repoWebURL + "/tree/" + tag
+	}
+	return repoWebURL + "/releases/tag/" + tag
 }
 
 // IsNewer reports whether latest is a newer version than current, per this

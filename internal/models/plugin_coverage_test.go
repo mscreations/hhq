@@ -128,7 +128,7 @@ func TestPluginStoreListEnabledFiltersOnEnabledProvidesEventsAndCalendarID(t *te
 	if err := s.Create(ctx, Plugin{ID: "ready", Name: "Ready Plugin", BaseURL: "http://x:1", Enabled: true}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "ready", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
+	if err := s.UpdateManifest(ctx, "ready", true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := s.SetCalendarID(ctx, "ready", calID); err != nil {
@@ -138,7 +138,7 @@ func TestPluginStoreListEnabledFiltersOnEnabledProvidesEventsAndCalendarID(t *te
 	if err := s.Create(ctx, Plugin{ID: "disabled", Name: "Disabled Plugin", BaseURL: "http://x:2", Enabled: false}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "disabled", false, sql.NullString{}, sql.NullString{}, true, sql.NullString{}); err != nil {
+	if err := s.UpdateManifest(ctx, "disabled", true, sql.NullString{}); err != nil {
 		t.Fatalf("UpdateManifest: %v", err)
 	}
 	if err := s.SetCalendarID(ctx, "disabled", calID); err != nil {
@@ -159,7 +159,12 @@ func TestPluginStoreListEnabledFiltersOnEnabledProvidesEventsAndCalendarID(t *te
 	}
 }
 
-func TestPluginStoreListViewsFiltersOnEnabledAndViewEnabled(t *testing.T) {
+// TestPluginStoreListViewsFiltersOnEnabledAndReturnsAllViews covers both the
+// enabled-plugin filter and the one-row-per-view join shape: a plugin can
+// register more than one view (each becomes its own kiosk nav button), a
+// disabled plugin's views are excluded even though the rows still exist,
+// and a plugin with zero registered views contributes nothing.
+func TestPluginStoreListViewsFiltersOnEnabledAndReturnsAllViews(t *testing.T) {
 	conn := testutil.RequireDB(t)
 	s := &PluginStore{DB: conn}
 	ctx := t.Context()
@@ -167,24 +172,68 @@ func TestPluginStoreListViewsFiltersOnEnabledAndViewEnabled(t *testing.T) {
 	if err := s.Create(ctx, Plugin{ID: "viewable", Name: "Viewable Plugin", BaseURL: "http://x:1", Enabled: true}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := s.UpdateManifest(ctx, "viewable", true, sql.NullString{String: "Bills", Valid: true}, sql.NullString{String: "dollar", Valid: true}, false, sql.NullString{}); err != nil {
-		t.Fatalf("UpdateManifest: %v", err)
+	if err := s.ReplaceViews(ctx, "viewable", []PluginView{
+		{ViewID: "bills", Label: "Bills", Icon: "dollar"},
+		{ViewID: "history", Label: "History", Icon: ""},
+	}); err != nil {
+		t.Fatalf("ReplaceViews: %v", err)
 	}
 
-	if err := s.Create(ctx, Plugin{ID: "not-viewable", Name: "Not Viewable Plugin", BaseURL: "http://x:2", Enabled: true}); err != nil {
+	if err := s.Create(ctx, Plugin{ID: "disabled", Name: "Disabled Plugin", BaseURL: "http://x:2", Enabled: false}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	// view_enabled left false.
+	if err := s.ReplaceViews(ctx, "disabled", []PluginView{{ViewID: "hidden", Label: "Hidden"}}); err != nil {
+		t.Fatalf("ReplaceViews: %v", err)
+	}
+
+	if err := s.Create(ctx, Plugin{ID: "no-views", Name: "No Views Plugin", BaseURL: "http://x:3", Enabled: true}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// No ReplaceViews call at all for this one - zero registered views.
 
 	list, err := s.ListViews(ctx)
 	if err != nil {
 		t.Fatalf("ListViews: %v", err)
 	}
-	if len(list) != 1 || list[0].ID != "viewable" {
-		t.Fatalf("ListViews = %+v, want only the view-enabled plugin", list)
+	if len(list) != 2 {
+		t.Fatalf("ListViews = %+v, want exactly the 2 views from the enabled plugin", list)
 	}
-	if list[0].ViewLabel.String != "Bills" || list[0].ViewIcon.String != "dollar" {
-		t.Fatalf("unexpected view metadata: %+v", list[0])
+	if list[0].PluginID != "viewable" || list[0].ViewID != "bills" || list[0].Label != "Bills" || list[0].Icon != "dollar" {
+		t.Fatalf("unexpected first view: %+v", list[0])
+	}
+	if list[1].PluginID != "viewable" || list[1].ViewID != "history" || list[1].Label != "History" {
+		t.Fatalf("unexpected second view (sort_order should preserve registration order): %+v", list[1])
+	}
+}
+
+// TestPluginStoreReplaceViewsDropsRemovedViews confirms ReplaceViews fully
+// replaces the prior set - a view present in an earlier call but missing
+// from a later one must actually disappear (simulating a plugin manifest
+// that stops advertising a view it used to have).
+func TestPluginStoreReplaceViewsDropsRemovedViews(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	s := &PluginStore{DB: conn}
+	ctx := t.Context()
+
+	if err := s.Create(ctx, Plugin{ID: "shrinking", Name: "Shrinking Plugin", BaseURL: "http://x:1", Enabled: true}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := s.ReplaceViews(ctx, "shrinking", []PluginView{
+		{ViewID: "a", Label: "A"},
+		{ViewID: "b", Label: "B"},
+	}); err != nil {
+		t.Fatalf("ReplaceViews (first): %v", err)
+	}
+	if err := s.ReplaceViews(ctx, "shrinking", []PluginView{{ViewID: "a", Label: "A"}}); err != nil {
+		t.Fatalf("ReplaceViews (second): %v", err)
+	}
+
+	list, err := s.ListViews(ctx)
+	if err != nil {
+		t.Fatalf("ListViews: %v", err)
+	}
+	if len(list) != 1 || list[0].ViewID != "a" {
+		t.Fatalf("ListViews = %+v, want only view %q to remain", list, "a")
 	}
 }
 

@@ -5,45 +5,98 @@
   <form id="settings-form" method="POST" action="/parent/settings" class="edit-form"
         hx-post="/parent/settings" hx-target="#settings-card" hx-swap="outerHTML">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <label>App Title
-      <input type="text" name="app_title" value="{{.AppTitle}}" required>
-    </label>
-    <label>Timezone
-      <select name="timezone" required>
-        {{$current := .Timezone}}
-        {{range .Timezones}}
-        <option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>
-        {{end}}
-      </select>
-    </label>
-    <label>Weather Location
-      <input type="text" name="location_query" placeholder="{{if .WeatherLocationName}}{{.WeatherLocationName}}{{else}}e.g. Chicago, IL{{end}}">
-    </label>
-    <label>Weather Units
-      <select name="units">
-        <option value="imperial"{{if eq .WeatherUnits "imperial"}} selected{{end}}>Fahrenheit</option>
-        <option value="metric"{{if eq .WeatherUnits "metric"}} selected{{end}}>Celsius</option>
-      </select>
-    </label>
-    <label>Radar Zoom
-      <input type="number" name="radar_zoom" min="1" max="18" value="{{.WeatherRadarZoom}}">
-    </label>
-    <label>Weekly Report Day
-      <select name="weekly_report_weekday">
-        {{$currentWeekday := .WeeklyReportWeekday}}
-        {{range $i, $name := .Weekdays}}
-        <option value="{{$i}}"{{if eq $i $currentWeekday}} selected{{end}}>{{$name}}</option>
-        {{end}}
-      </select>
-    </label>
-    <label>Weekly Report Time
-      <select name="weekly_report_hour">
-        {{$currentHour := .WeeklyReportHour}}
-        {{range $h := .Hours}}
-        <option value="{{$h}}"{{if eq $h $currentHour}} selected{{end}}>{{printf "%02d:00" $h}}</option>
-        {{end}}
-      </select>
-    </label>
+
+    <fieldset class="settings-group">
+      <legend>General</legend>
+      <div class="settings-group-grid">
+        <label>App Title
+          <input type="text" name="app_title" value="{{.AppTitle}}" required>
+        </label>
+        <label>Timezone
+          <select name="timezone" required>
+            {{$current := .Timezone}}
+            {{range .Timezones}}
+            <option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>
+            {{end}}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="settings-group">
+      <legend>Weather</legend>
+      <div class="settings-group-grid">
+        <label>Weather Location
+          <input type="text" name="location_query" placeholder="{{if .WeatherLocationName}}{{.WeatherLocationName}}{{else}}e.g. Chicago, IL{{end}}">
+        </label>
+        <label>Weather Units
+          <select name="units">
+            <option value="imperial"{{if eq .WeatherUnits "imperial"}} selected{{end}}>Fahrenheit</option>
+            <option value="metric"{{if eq .WeatherUnits "metric"}} selected{{end}}>Celsius</option>
+          </select>
+        </label>
+        <label>Radar Zoom
+          <input type="number" name="radar_zoom" min="1" max="18" value="{{.WeatherRadarZoom}}">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="settings-group">
+      <legend>Weekly Report</legend>
+      <div class="settings-group-grid">
+        <label>Weekly Report Day
+          <select name="weekly_report_weekday">
+            {{$currentWeekday := .WeeklyReportWeekday}}
+            {{range $i, $name := .Weekdays}}
+            <option value="{{$i}}"{{if eq $i $currentWeekday}} selected{{end}}>{{$name}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>Weekly Report Time
+          <select name="weekly_report_hour">
+            {{$currentHour := .WeeklyReportHour}}
+            {{range $h := .Hours}}
+            <option value="{{$h}}"{{if eq $h $currentHour}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+            {{end}}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset class="settings-group">
+      <legend>Kiosk &amp; Calendar View</legend>
+      <div class="settings-group-grid">
+        <label>Kiosk Default Layout
+          <select name="kiosk_layout">
+            <option value="classic"{{if ne .KioskLayout "weekly"}} selected{{end}}>Classic (3-column)</option>
+            <option value="weekly"{{if eq .KioskLayout "weekly"}} selected{{end}}>5-Day Calendar</option>
+          </select>
+        </label>
+        <label>Calendar View Hours
+          <select name="kiosk_grid_mode">
+            <option value="fixed"{{if ne .KioskGridMode "full24"}} selected{{end}}>Fixed waking hours</option>
+            <option value="full24"{{if eq .KioskGridMode "full24"}} selected{{end}}>Full 24 hours (scrollable)</option>
+          </select>
+        </label>
+        <label>Calendar View Start Hour
+          <select name="kiosk_grid_start_hour">
+            {{$currentStart := .KioskGridStartHour}}
+            {{range $h := .Hours}}
+            <option value="{{$h}}"{{if eq $h $currentStart}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>Calendar View End Hour
+          <select name="kiosk_grid_end_hour">
+            {{$currentEnd := .KioskGridEndHour}}
+            {{range $h := .Hours}}
+            <option value="{{$h}}"{{if eq $h $currentEnd}} selected{{end}}>{{printf "%02d:00" $h}}</option>
+            {{end}}
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
     <div class="edit-actions">
       <button type="submit">Save</button>
     </div>

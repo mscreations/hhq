@@ -1,0 +1,268 @@
+# Default values for the hhq chart.
+# See README.md in this directory for the full reference and worked examples.
+
+hhq:
+  image:
+    repository: ghcr.io/mscreations/hhq
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  replicas: 1
+  # Keep this at 1: hhq's scheduler (calendar sync, weekly report emails) has
+  # no distributed locking. Don't scale past 1 without splitting the
+  # scheduler out into its own single-instance component first.
+
+  # Port the hhq container listens on (also sets LISTEN_ADDR). Must be
+  # unprivileged (>1023) since the container runs as non-root (uid 65532).
+  port: 8080
+
+  service:
+    # Service port - independent of hhq.port above. Kubernetes Services
+    # aren't a real process bind (kube-proxy/eBPF just forwards from here
+    # to the container's named "http" port), so this can safely be 80 for
+    # a plain in-cluster DNS name, or match hhq.port if you'd rather keep
+    # the two aligned.
+    port: 8080
+
+  # Non-secret env vars, rendered into a ConfigMap and envFrom'd. Add any
+  # other optional env var from internal/config/config.go here as needed.
+  config:
+    LOG_LEVEL: "info"
+    LOG_FORMAT: "text" # set to "json" for one JSON object per log line (e.g. for Loki/log-aggregator ingestion)
+    DB_SSLMODE: "disable"
+    CALENDAR_SYNC_INTERVAL_MINUTES: "15"
+    CALENDAR_WINDOW_DAYS: "7"
+    SMTP_PORT: "587"
+    SMTP_USE_TLS: "false"
+    SMTP_STARTTLS: "true"
+    SMTP_FROM: "hhq@example.com"
+    PUBLIC_BASE_URL: "https://hhq.example.com"
+
+  # Names of Secrets that must already exist in the release namespace. This
+  # chart never templates a Secret containing real credentials - create
+  # these yourself (kubectl create secret generic ..., Sealed Secrets,
+  # External Secrets, SOPS, etc).
+  existingSecrets:
+    # Keys expected: ENCRYPTION_KEY (required), and optionally
+    # BOOTSTRAP_PARENT_NAME / BOOTSTRAP_PARENT_EMAIL / BOOTSTRAP_PARENT_PASSWORD
+    # (only used on first startup, before any parent user exists).
+    # BOOTSTRAP_PARENT_AVATAR_FILE can also be set here (a path, not secret
+    # data itself) to give that first parent an avatar - point it at a file
+    # mounted via bootstrap.extraMounts below, the same way a calendars.json
+    # entry's password_file works.
+    app: hhq-app-secrets
+    # Keys expected: SMTP_HOST, SMTP_USER, SMTP_PASSWORD.
+    smtp: hhq-smtp
+    # A CloudNativePG-generated (or equivalent) Secret with keys:
+    # host, port, dbname, user, password.
+    db: myapp-postgres-app
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# Bootstrap config files, read by hhq at startup from CONFIG_DIR. Each of
+# children/chores/assignments/calendars is optional and independently
+# rendered into a ConfigMap - this is safe even for calendars, since each
+# entry's password should be given as password_file (a path to a file from
+# a separately-mounted Secret, see extraMounts below) rather than a plain
+# password field. Set password directly only for quick local testing; it
+# ends up in a ConfigMap in plaintext.
+bootstrap:
+  configDir: /config
+
+  # List of {name, color} - see internal/config's ChildBootstrap.
+  children: []
+  # e.g.
+  # children:
+  #   - name: Alex
+  #   - name: Sam
+  #     color: "#3B82F6"
+  #     avatar_file: /secrets/avatars/sam.jpg   # see extraMounts below
+
+  # List of {name, description} - see ChoreBootstrap.
+  chores: []
+  # e.g.
+  # chores:
+  #   - name: Take out trash
+  #     description: Bins go to the curb Tuesday night
+  #   - name: Feed the dog
+
+  # Map of child name -> list of {chore, points, days_of_week[] |
+  # one_off_date} - see AssignmentBootstrap. Exactly one of
+  # days_of_week/one_off_date per entry.
+  assignments: {}
+  # e.g.
+  # assignments:
+  #   Alex:
+  #     - chore: Take out trash
+  #       points: 5
+  #       days_of_week: ["tue", "fri"]
+  #   Sam:
+  #     - chore: Feed the dog
+  #       points: 2
+  #       one_off_date: "2026-08-01"
+
+  # List of {name, provider, url, username, password | password_file} - see
+  # config.CalendarAccountBootstrap. Prefer password_file (a path to a file
+  # mounted from an existing Secret via extraMounts below) over password, so
+  # this list - and the ConfigMap it's rendered into - never holds plaintext
+  # CalDAV credentials. Setting both password and password_file on the same
+  # entry is a startup-time bootstrap error.
+  calendars: []
+  # e.g.
+  # calendars:
+  #   - name: Mom's Fastmail
+  #     provider: fastmail
+  #     username: mom@fastmail.com
+  #     password_file: /secrets/calendars/mom-fastmail-password
+  #   - name: Dad's iCloud
+  #     provider: icloud
+  #     username: dad@icloud.com
+  #     password_file: /secrets/calendars/dad-icloud-password
+
+  # Extra volumes mounted into the hhq container ONLY, sourced from an
+  # existing Secret you create yourself (never chart-templated) - for
+  # secret material bootstrap.calendars needs as a *file* (password_file),
+  # since the calendars list above is not secret. Each entry mounts one
+  # Secret as a directory of files (one per key), or a subset of keys via
+  # items. Same shape as a plugin's extraMounts (see plugins[].extraMounts
+  # below).
+  extraMounts: []
+  # e.g.
+  # extraMounts:
+  #   - name: calendars
+  #     secretName: hhq-calendar-passwords
+  #     mountPath: /secrets/calendars
+  #     # Optional: mount only these keys (each to its own file under
+  #     # mountPath); omit to mount every key in the secret.
+  #     items:
+  #       - key: mom-fastmail-password
+  #         path: mom-fastmail-password
+  #       - key: dad-icloud-password
+  #         path: dad-icloud-password
+  #     readOnly: true   # default true
+  #   # Avatar images (for children.json's avatar_file or
+  #   # BOOTSTRAP_PARENT_AVATAR_FILE above) work the same way - they're not
+  #   # secret, but Secrets are the only volume source extraMounts supports
+  #   # today, and `kubectl create secret generic hhq-avatars --from-file=...`
+  #   # handles the binary-to-base64 encoding for you.
+  #   - name: avatars
+  #     secretName: hhq-avatars
+  #     mountPath: /secrets/avatars
+
+# Standard Kubernetes Ingress. Independent of httpRoute below - enable
+# whichever matches your ingress controller.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: hhq.example.com
+  tls: []
+  # e.g.
+  # tls:
+  #   - secretName: hhq-tls
+  #     hosts: ["hhq.example.com"]
+
+# Gateway API HTTPRoute. Independent of ingress above.
+httpRoute:
+  enabled: false
+  parentRefs: []
+  # e.g.
+  # parentRefs:
+  #   - name: my-gateway
+  #     namespace: gateway-system
+  hostnames: []
+  # e.g.
+  # hostnames: ["hhq.example.com"]
+
+# Plugins to run as sidecar containers in the same pod as hhq (e.g.
+# billtracker-plugin). hhq reaches each one over localhost:<port> - no
+# Service is created for any plugin, only hhq gets one. This chart derives
+# hhq's plugins.json bootstrap file automatically from this list.
+plugins: []
+# e.g.
+# plugins:
+#   - name: billtracker
+#     displayName: "Bill Tracker"        # optional, defaults to name; used in plugins.json's "name" field
+#     image:
+#       repository: ghcr.io/mscreations/billtracker-plugin
+#       tag: latest
+#       pullPolicy: IfNotPresent
+#     port: 8090
+#     # Extra non-secret env vars for this plugin container (e.g. scheduler
+#     # tuning knobs). DB_* and CONFIG_DIR are set automatically - don't
+#     # set them here.
+#     env:
+#       BILL_INSTANCE_LOOKAHEAD_DAYS: "60"
+#       SIMPLEFIN_REFRESH_INTERVAL_MINUTES: "60"
+#       VENDOR_REFRESH_INTERVAL_MINUTES: "360"
+#     # If true (the default), this plugin's DB_HOST/PORT/NAME/USER/PASSWORD
+#     # are sourced from hhq.existingSecrets.db (the common "shared database,
+#     # bt_-prefixed tables" case). Set false to use a separate database via
+#     # existingSecret below instead.
+#     useHhqDbSecret: true
+#     # Names of existing Secrets for this plugin's own credentials.
+#     existingSecret:
+#       # Must contain ENCRYPTION_KEY (and any other plugin-specific env-only
+#       # secrets, e.g. PLUGIN_AUTH_TOKEN) - always required, envFrom'd into
+#       # the plugin container regardless of useHhqDbSecret.
+#       app: billtracker-app-secrets
+#       # Only read when useHhqDbSecret is false above - must then contain
+#       # host/port/dbname/user/password keys (mapped the same way as
+#       # hhq.existingSecrets.db). Omit entirely when useHhqDbSecret is true.
+#       db: billtracker-db-secrets
+#     # Optional bootstrap files for this plugin (e.g. bills.json). Not
+#     # secret data - rendered into a ConfigMap, mounted at this plugin's
+#     # own CONFIG_DIR subdirectory so multiple plugins never collide.
+#     bootstrapFiles: {}
+#     # e.g.
+#     # bootstrapFiles:
+#     #   bills.json: |
+#     #     [{"name": "Electric", "amount": 128.43, "schedule": "monthly", "day_of_month": 5}]
+#     # Extra volumes mounted into this plugin's container ONLY, sourced from
+#     # an existing Secret you create yourself (never chart-templated) - for
+#     # secret material a bootstrapFiles ConfigMap can't hold, e.g.
+#     # billtracker-plugin's *_PASSWORD_FILE-style options. Each entry mounts
+#     # one Secret as a directory of files (one per key), or a subset of keys
+#     # via items. Set the plugin's own env (above) to point at the resulting
+#     # path, e.g. SIMPLEFIN_PASSWORD_FILE: "/secrets/simplefin/password".
+#     extraMounts: []
+#     # e.g.
+#     # extraMounts:
+#     #   - name: simplefin
+#     #     secretName: billtracker-simplefin
+#     #     mountPath: /secrets/simplefin
+#     #     # Optional: mount only these keys (each to its own file under
+#     #     # mountPath); omit to mount every key in the secret.
+#     #     items:
+#     #       - key: password
+#     #         path: password
+#     #     readOnly: true   # default true
+#     resources:
+#       requests:
+#         cpu: 50m
+#         memory: 64Mi
+#       limits:
+#         cpu: 500m
+#         memory: 256Mi
+
+# Arbitrary extra Kubernetes manifests to render alongside this chart's own
+# resources (e.g. a NetworkPolicy, an ExternalSecret, a second Ingress).
+# Each entry is a full manifest object, rendered as its own `---`-separated
+# document. Values are passed through `tpl`, so quoted string fields can
+# reference chart template values/functions, e.g. "{{ .Release.Namespace }}".
+extraManifests: []
+# e.g.
+# extraManifests:
+#   - apiVersion: v1
+#     kind: ConfigMap
+#     metadata:
+#       name: hhq-extra-example
+#       namespace: "{{ .Release.Namespace }}"
+#     data:
+#       foo: bar

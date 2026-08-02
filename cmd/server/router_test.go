@@ -147,11 +147,12 @@ func newApp(t *testing.T, conn *sql.DB) *handlers.App {
 
 	app := &handlers.App{
 		Cfg: &config.Config{
-			CalendarWindowDays:   7,
-			ApprovalLinkTTL:      time.Hour,
-			InviteLinkTTL:        time.Hour,
-			PasswordResetLinkTTL: time.Hour,
-			PublicBaseURL:        "http://testserver.local",
+			CalendarWindowDays:     7,
+			ApprovalLinkTTL:        time.Hour,
+			InviteLinkTTL:          time.Hour,
+			PasswordResetLinkTTL:   time.Hour,
+			PublicBaseURL:          "http://testserver.local",
+			PluginConnectionSecret: "test-plugin-connection-secret",
 		},
 		Users:            &models.UserStore{DB: conn},
 		Sessions:         &models.SessionStore{DB: conn},
@@ -264,7 +265,7 @@ func newBrokenDBTestServer(t *testing.T) *testServer {
 func TestKioskRoutesReturnServerErrorOnDBFailure(t *testing.T) {
 	ts := newBrokenDBTestServer(t)
 
-	for _, path := range []string{"/", "/kiosk/fragments/agenda", "/kiosk/fragments/calendar", "/kiosk/fragments/chores"} {
+	for _, path := range []string{"/", "/kiosk/fragments/agenda", "/kiosk/fragments/calendar", "/kiosk/fragments/chores", "/kiosk/fragments/week"} {
 		resp, err := ts.Client.Get(ts.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -460,6 +461,72 @@ func TestKioskFragmentsRenderWithoutAuth(t *testing.T) {
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("GET %s: status = %d, want 200", path, resp.StatusCode)
 		}
+	}
+}
+
+// TestKioskFragmentWeekRendersWithoutAuth is TestKioskFragmentsRenderWithoutAuth's
+// counterpart for the new 5-day view's fragment route.
+func TestKioskFragmentWeekRendersWithoutAuth(t *testing.T) {
+	ts := newTestServer(t)
+
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/fragments/week")
+	if err != nil {
+		t.Fatalf("GET /kiosk/fragments/week: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
+// TestKioskIndexSeedsHomeViewWhenLayoutSettingUnset confirms the default
+// (unset kiosk_layout setting) keeps the classic 3-column view as "Home" -
+// the unchanged, backward-compatible behavior.
+func TestKioskIndexSeedsHomeViewWhenLayoutSettingUnset(t *testing.T) {
+	ts := newTestServer(t)
+
+	resp, err := ts.Client.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(body), "kiosk-grid") {
+		t.Errorf("expected the classic 3-column grid markup when kiosk_layout is unset, got: %s", body)
+	}
+	if !strings.Contains(string(body), `data-nav="calendars"`) {
+		t.Errorf("expected a 'Calendars' alternate nav button when classic is the default, got: %s", body)
+	}
+}
+
+// TestKioskIndexSeedsWeekViewWhenLayoutSettingIsWeekly confirms setting
+// kiosk_layout=weekly makes the 5-day view "Home", with the classic view
+// reachable via the "Agenda" alternate nav button instead.
+func TestKioskIndexSeedsWeekViewWhenLayoutSettingIsWeekly(t *testing.T) {
+	ts := newTestServer(t)
+	ctx := t.Context()
+
+	if err := ts.App.Settings.Set(ctx, "kiosk_layout", "weekly"); err != nil {
+		t.Fatalf("Settings.Set: %v", err)
+	}
+
+	resp, err := ts.Client.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(body), "kiosk-week") {
+		t.Errorf("expected the 5-day view markup when kiosk_layout=weekly, got: %s", body)
+	}
+	if !strings.Contains(string(body), `data-nav="agenda"`) {
+		t.Errorf("expected an 'Agenda' alternate nav button when weekly is the default, got: %s", body)
 	}
 }
 
@@ -1279,6 +1346,41 @@ func TestBootstrapCalendarAccountsRemovesEntryDroppedFromConfig(t *testing.T) {
 	}
 	if accountsAfter[0].Name != "Keep Me" {
 		t.Fatalf("expected only %q to remain, got %+v", "Keep Me", accountsAfter)
+	}
+}
+
+// TestBootstrapCalendarAccountsPreservesPluginSyntheticCalendar is a
+// regression test: a plugin's synthetic calendar_accounts row (created by
+// ensurePluginCalendar, see plugin_bootstrap.go) is BootstrapManaged=true
+// but is never listed in calendars.json - it's reconciled against
+// plugins.json instead. Before this fix, BootstrapCalendarAccounts's own
+// removal loop treated it as an orphaned bootstrap entry and deleted it on
+// every single startup, even though the plugin itself was still present
+// (and possibly just not yet reachable/registered).
+func TestBootstrapCalendarAccountsPreservesPluginSyntheticCalendar(t *testing.T) {
+	ts := newTestServer(t)
+
+	pluginAccountID, err := ts.App.CalendarAccounts.Create(t.Context(), models.CalendarAccount{
+		Name:             "Plugin: Bill Tracker",
+		Provider:         models.ProviderPlugin,
+		BootstrapManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A calendars.json that knows nothing about the plugin's synthetic
+	// account (as is always the case - plugins are never listed there).
+	ts.App.BootstrapCalendarAccounts(t.Context(), []config.CalendarAccountBootstrap{
+		{Name: "Fastmail", Provider: "fastmail", Username: "user@fastmail.com", Password: "pw"},
+	})
+
+	account, err := ts.App.CalendarAccounts.GetByID(t.Context(), pluginAccountID)
+	if err != nil {
+		t.Fatalf("plugin synthetic calendar account was deleted by calendars.json reconciliation: %v", err)
+	}
+	if account.Provider != models.ProviderPlugin {
+		t.Fatalf("unexpected provider on surviving account: %+v", account)
 	}
 }
 
@@ -2308,6 +2410,63 @@ func TestResetPasswordInvalidatesExistingSessions(t *testing.T) {
 	}
 }
 
+// TestKioskCompleteChoreWeekContextRendersDayFragment confirms a chore
+// tapped from the 5-day view (?view=week&day=...) re-renders just that one
+// day's kiosk/_week_day_chores fragment (identified by its
+// #week-chores-<date> id) instead of the classic view's kiosk/_chores.
+func TestKioskCompleteChoreWeekContextRendersDayFragment(t *testing.T) {
+	ts := newTestServer(t)
+	ctx := t.Context()
+
+	childID, err := ts.App.Users.CreateChild(ctx, "Kid", "#3B82F6")
+	if err != nil {
+		t.Fatalf("CreateChild: %v", err)
+	}
+	choreID, err := ts.App.Chores.Create(ctx, "Dishes", "")
+	if err != nil {
+		t.Fatalf("Chores.Create: %v", err)
+	}
+	if _, err := ts.App.ChoreDefs.CreateRecurring(ctx, childID, choreID, 5, 0b1111111); err != nil {
+		t.Fatalf("CreateRecurring: %v", err)
+	}
+	today := time.Now()
+	if err := ts.App.ChoreInstances.EnsureForDate(ctx, today); err != nil {
+		t.Fatalf("EnsureForDate: %v", err)
+	}
+	instances, err := ts.App.ChoreInstances.ListForDate(ctx, today)
+	if err != nil || len(instances) != 1 {
+		t.Fatalf("ListForDate: instances=%+v err=%v", instances, err)
+	}
+	instanceID := instances[0].ID
+	dateKey := today.Format("2006-01-02")
+
+	resp, err := ts.Client.Post(
+		fmt.Sprintf("%s/kiosk/chores/%d/complete?view=week&day=%s", ts.URL, instanceID, dateKey),
+		"application/x-www-form-urlencoded", nil)
+	if err != nil {
+		t.Fatalf("kiosk tap: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if !strings.Contains(string(body), fmt.Sprintf(`id="week-chores-%s"`, dateKey)) {
+		t.Fatalf("body = %q, want the day-scoped week-chores fragment, not the classic _chores fragment", body)
+	}
+
+	got, err := ts.App.ChoreInstances.GetByID(ctx, instanceID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if got.Status != models.StatusPendingApproval {
+		t.Fatalf("Status = %q, want %q after kiosk week-view tap", got.Status, models.StatusPendingApproval)
+	}
+}
+
 func TestKioskCompleteChoreDoubleTapIsANoOp(t *testing.T) {
 	ts := newTestServer(t)
 	ctx := t.Context()
@@ -2819,6 +2978,45 @@ func TestCreateCalendarAccountDiscoversRealCalendars(t *testing.T) {
 // branch is already covered by TestKioskFragmentsRenderWithoutAuth) - both
 // the header quick-glance widget (icon+temp) and the full-page weather view
 // should render the cached forecast's data.
+// TestKioskFragmentWeekShowsForecastOnNonTodayHeadingsOnly confirms each day
+// heading in the 5-day view shows a forecast icon+high-temp for every day
+// except Today (which already has the header's own current-conditions
+// widget - see kiosk_week.go's buildKioskWeekViewData).
+func TestKioskFragmentWeekShowsForecastOnNonTodayHeadingsOnly(t *testing.T) {
+	ts := newTestServer(t)
+	now := time.Now()
+	ts.App.Weather.Set(&weather.Forecast{
+		FetchedAt: now,
+		Daily: []weather.DayPoint{
+			{Date: now, Code: 0, TempMax: 91},
+			{Date: now.AddDate(0, 0, 1), Code: 61, TempMax: 68},
+			{Date: now.AddDate(0, 0, 2), Code: 71, TempMax: 30},
+		},
+	})
+
+	resp, err := ts.Client.Get(ts.URL + "/kiosk/fragments/week")
+	if err != nil {
+		t.Fatalf("GET /kiosk/fragments/week: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if strings.Contains(string(body), "91°") {
+		t.Errorf("Today's heading should not show a forecast temp, got body: %s", body)
+	}
+	if !strings.Contains(string(body), "68°") {
+		t.Errorf("Tomorrow's heading should show its forecast high (68°), got body: %s", body)
+	}
+	if !strings.Contains(string(body), "30°") {
+		t.Errorf("Day-after-tomorrow's heading should show its forecast high (30°), got body: %s", body)
+	}
+}
+
 func TestKioskWeatherFragmentsWithPopulatedCache(t *testing.T) {
 	ts := newTestServer(t)
 	ts.App.Weather.Set(&weather.Forecast{

@@ -170,6 +170,7 @@ func (a *App) syncPluginAccount(ctx context.Context, account *models.CalendarAcc
 		Events:           a.Events,
 		CalendarAccounts: a.CalendarAccounts,
 		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
 	}
 	if err := sc.SyncOne(ctx, *plugin, a.Cfg.CalendarWindowDays); err != nil {
 		logging.Errorf("on-demand sync: plugin %q failed: %v", plugin.ID, err)
@@ -191,13 +192,27 @@ func (a *App) syncPluginAccount(ctx context.Context, account *models.CalendarAcc
 // name no longer appears in entries is deleted (same as the dashboard's
 // delete button - cascades to its calendars/cached events), since otherwise
 // there would be no way to remove an account added via bootstrap short of
-// reaching into the database directly.
+// reaching into the database directly. ProviderPlugin accounts are also
+// BootstrapManaged (see ensurePluginCalendar in plugin_bootstrap.go) but are
+// never listed in calendars.json - they're reconciled against plugins.json
+// instead (BootstrapPlugins' own removal loop), so they're excluded here to
+// avoid deleting a plugin's synthetic calendar on every single startup
+// before that plugin has even had a chance to connect and register.
 func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.CalendarAccountBootstrap) {
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		seen[e.Name] = true
-		if e.Name == "" || e.Username == "" || e.Password == "" {
-			logging.Errorf("bootstrap: skipping calendar account %q: name, username, and password are all required", e.Name)
+		if e.Name == "" || e.Username == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: name and username are required", e.Name)
+			continue
+		}
+		password, err := e.ResolvePassword()
+		if err != nil {
+			logging.Errorf("bootstrap: skipping calendar account %q: %v", e.Name, err)
+			continue
+		}
+		if password == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: password or password_file is required", e.Name)
 			continue
 		}
 		provider, err := config.ResolveProvider(e.Provider)
@@ -210,7 +225,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 			logging.Errorf("bootstrap: skipping calendar account %q: provider %q requires an explicit url", e.Name, provider)
 			continue
 		}
-		encrypted, err := a.Encryptor.Encrypt(e.Password)
+		encrypted, err := a.Encryptor.Encrypt(password)
 		if err != nil {
 			logging.Errorf("bootstrap: encrypting password for calendar account %q: %v", e.Name, err)
 			continue
@@ -253,7 +268,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 		return
 	}
 	for _, account := range all {
-		if !account.BootstrapManaged || seen[account.Name] {
+		if !account.BootstrapManaged || seen[account.Name] || account.Provider == models.ProviderPlugin {
 			continue
 		}
 		if err := a.CalendarAccounts.Delete(ctx, account.ID); err != nil {

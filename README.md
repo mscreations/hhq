@@ -78,7 +78,14 @@ There are two ways to create the first parent account - use whichever's convenie
 
 - **`BOOTSTRAP_PARENT_NAME`/`_EMAIL`/`_PASSWORD` env vars**: if set, the app
   creates that parent automatically on startup, as long as no parent exists
-  yet. Remove those keys afterward (it's a no-op once any parent exists).
+  yet. Remove those keys afterward (it's a no-op once any parent exists). An
+  optional `BOOTSTRAP_PARENT_AVATAR_FILE` env var (a path to a PNG/JPEG/GIF,
+  same 2 MB/4096x4096px limits as `children.json`'s `avatar_file`, resolved
+  relative to `CONFIG_DIR` unless absolute) sets that parent's avatar at the
+  same time - unlike `avatar_file`, this only applies once, at the moment the
+  initial parent is created, since there's no ongoing bootstrap file for
+  parents to reconcile against on every restart; a photo uploaded later from
+  the dashboard is never overwritten.
 - **The `/setup` page**: if you'd rather not put a password in an env var,
   leave the bootstrap vars unset and visit `/setup` in a browser instead -
   it shows a "create the initial account" form, and self-disables (redirects
@@ -143,8 +150,7 @@ you know you need a different value.
 
 Alternatively, bootstrap any number of accounts (0, 1, or many) automatically
 on startup by mounting a `calendars.json` file into the directory named by
-`CONFIG_DIR` (default `/config` - see "Bootstrap config files" below), e.g.
-from a Kubernetes Secret since it holds plaintext app passwords:
+`CONFIG_DIR` (default `/config` - see "Bootstrap config files" below):
 
 ```json
 [
@@ -159,10 +165,18 @@ from a Kubernetes Secret since it holds plaintext app passwords:
     "provider": "generic",
     "url": "https://caldav.example.com/",
     "username": "someuser",
-    "password": "app-specific-password"
+    "password_file": "/secrets/caldav/someuser-password"
   }
 ]
 ```
+
+Each entry's password can be given either as `password` (a plain string) or
+as `password_file` (a path to a file containing just the password, e.g. a
+Kubernetes Secret mounted separately from `calendars.json` itself) - setting
+both on the same entry is a startup-time bootstrap error for that entry only
+(the rest of the file still applies). Using `password_file` means
+`calendars.json` holds no secret material, so it can live in a plain
+ConfigMap instead of needing to be a Secret itself.
 
 `provider` accepts `fastmail`, `icloud`, or `generic` (the CalDAV root URL is
 pre-filled for the first two, same as the dashboard form; `generic` requires
@@ -297,9 +311,10 @@ instead.
     {"name": "Feed the dog"}
   ]
   ```
-- **`assignments.json`** - a JSON object keyed by `children.json` entry name,
-  each value a list of that child's chore assignments (matched by name
-  against `chores.json`) and its schedule, e.g.:
+- **`assignments.json`** - a JSON object keyed by child name (matched
+  against `children.json`), each holding an array of that child's chore
+  assignments, pairing a `chore` (matched by name against `chores.json`)
+  with its schedule, e.g.:
   ```json
   {
     "Alex": [
@@ -329,6 +344,19 @@ instead.
   `id` is a stable slug (also used in the plugin's dashboard/kiosk URLs) -
   don't change it once deployed, since it's how hhq matches config entries
   to database rows across restarts.
+
+  **Update-available icon is automatic, nothing to configure**: if a plugin
+  serves an unauthenticated `GET {base_url}/version` returning
+  ```json
+  {"version": "1.0.0", "upgradeAvailable": true, "upgradeVersion": "1.0.2", "changelog": "feat: Update versioning", "channel": "dev"}
+  ```
+  hhq polls it periodically (same cadence as its own self-update check,
+  `RELEASE_CHECK_INTERVAL_MINUTES`) and shows a small update-available icon
+  next to the plugin's version on the parent dashboard's Plugins card when
+  `upgradeAvailable` is true - hovering it shows `upgradeVersion`/`changelog`.
+  hhq never talks to GitHub (or any other host) on a plugin's behalf; each
+  plugin is responsible for knowing its own repo and checking it. A plugin
+  that doesn't implement `/version` simply never shows the icon.
 
   **Authentication is automatic, nothing to configure**: hhq and the plugin
   agree on a shared secret the first time hhq successfully reaches the
@@ -362,10 +390,11 @@ instead.
   cluster.
 
   **Local/dev convenience**: `plugins.json` entries only ever describe
-  `id`/`name`/`base_url`/`enabled` - hhq expects the plugin to already be
-  running at `base_url` and never spawns anything itself (there used to be a
-  `command`/`dir` field for that; it was removed since it couldn't be killed
-  cleanly by a debugger's hard-stop on Windows). For local development,
+  `id`/`name`/`base_url`/`enabled` - hhq expects the plugin to
+  already be running at `base_url` and never spawns anything itself (there
+  used to be a `command`/`dir` field for that; it was removed since it
+  couldn't be killed cleanly by a debugger's hard-stop on Windows). For
+  local development,
   launch the plugin as its own VS Code debug session instead - see
   `.vscode/launch.json`'s `hhq + <plugin>` compound configuration, which
   starts both and (`stopAll: true`) tears both down together when you hit
@@ -380,6 +409,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 
 | Variable | Required | Purpose |
 |---|---|---|
+| `LISTEN_ADDR` | no (default `:8080`) | Address/port the HTTP server binds to |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | yes | Postgres connection (sourced from the CNPG secret in k8s) |
 | `DB_SSLMODE` | no (default `disable`) | Postgres SSL mode |
 | `ENCRYPTION_KEY` | yes | See secret generation above |
@@ -393,12 +423,16 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `CALENDAR_WINDOW_DAYS` | no (default 7) | How many days ahead the kiosk calendar shows |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | no | OAuth 2.0 Client credentials from a Google Cloud project with the Calendar API enabled. If either is unset, the "Connect Google Calendar" option is hidden from the parent dashboard - Fastmail/iCloud continue to work without these. |
 | `BOOTSTRAP_PARENT_NAME/EMAIL/PASSWORD` | no (alternative: use the `/setup` page) | Creates the initial parent login on startup |
+| `BOOTSTRAP_PARENT_AVATAR_FILE` | no | Path to a PNG/JPEG/GIF (max 2 MB) applied as the initial parent's avatar, once, when it's created - see "Add your first parent" above |
 | `CONFIG_DIR` | no (default `/config`) | Directory scanned on every startup for the optional bootstrap config files (`calendars.json`, `children.json`, `chores.json`, `assignments.json`, `plugins.json`) - see "Bootstrap config files" above |
 | `PLUGIN_SYNC_INTERVAL_MINUTES` | no (default 15) | How often registered plugins are polled for synthetic calendar events (see `plugins.json` above) |
+| `PLUGIN_CONNECTION_SECRET` | no (default `hhq-plugin-connection`) | Shared secret hhq presents to a plugin's `POST /register` (see `PLUGINS.md`'s "Authentication: self-registration") - set the same value on both hhq and the plugin if you want a real, hand-generated secret instead of the shared default |
 | `WEATHER_LOCATION` | no | Free-text place name (e.g. `Chicago, IL`) geocoded to seed the weather widget's location on first startup only - a location already set (by this or the parent dashboard) is never overwritten. Ignored if `WEATHER_LAT`/`WEATHER_LON` are both set. |
 | `WEATHER_LAT`, `WEATHER_LON` | no | Explicit coordinates to seed the weather location on first startup only, skipping geocoding. If `WEATHER_LOCATION` is also set, it's used only as the display name. |
 | `WEATHER_UNITS` | no (default `imperial`) | `imperial` or `metric`, used only when seeding the location via the variables above |
+| `WEATHER_REFRESH_INTERVAL_MINUTES` | no (default 15) | How often the weather widget's forecast is refreshed from Open-Meteo |
 | `LOG_LEVEL` | no (default `info`) | Set to `debug` for verbose logs: calendar sync detail (principal/home-set discovery, event counts per calendar), email send attempts, per-request logging, chore state transitions, etc. |
+| `LOG_FORMAT` | no (default `text`) | Set to `json` to emit one JSON object per log line (`time`/`level`/`msg`) instead of the default `[LEVEL] message` text format - useful when logs are ingested by an aggregator like Loki/Grafana. |
 | `RELEASE_CHECK_INTERVAL_MINUTES` | no (default 1440) | How often the app polls GitHub for a newer release, to drive the "Update Available" badge on the parent dashboard |
 
 ## Known limitations & next steps

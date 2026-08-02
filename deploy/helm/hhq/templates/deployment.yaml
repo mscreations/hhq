@@ -1,0 +1,295 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hhq.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hhq.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.hhq.replicas }}
+  # Keep this at 1: hhq's scheduler has no distributed locking (see
+  # values.yaml comment). Uncomment/override only after splitting the
+  # scheduler out into its own single-instance component.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "hhq.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hhq.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: hhq
+          image: "{{ .Values.hhq.image.repository }}:{{ .Values.hhq.image.tag }}"
+          imagePullPolicy: {{ .Values.hhq.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.hhq.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "hhq.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.hhq.existingSecrets.app }}
+            - secretRef:
+                name: {{ .Values.hhq.existingSecrets.smtp }}
+          env:
+            # Mapped individually from the CNPG-generated (or equivalent)
+            # cluster secret. Adjust key names below if yours differs.
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hhq.existingSecrets.db }}
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hhq.existingSecrets.db }}
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hhq.existingSecrets.db }}
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hhq.existingSecrets.db }}
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.hhq.existingSecrets.db }}
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- toYaml .Values.hhq.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.bootstrap.children }}
+            - name: bootstrap
+              mountPath: {{ .Values.bootstrap.configDir }}/children.json
+              subPath: children.json
+              readOnly: true
+            {{- end }}
+            {{- if .Values.bootstrap.chores }}
+            - name: bootstrap
+              mountPath: {{ .Values.bootstrap.configDir }}/chores.json
+              subPath: chores.json
+              readOnly: true
+            {{- end }}
+            {{- if .Values.bootstrap.assignments }}
+            - name: bootstrap
+              mountPath: {{ .Values.bootstrap.configDir }}/assignments.json
+              subPath: assignments.json
+              readOnly: true
+            {{- end }}
+            {{- if .Values.bootstrap.calendars }}
+            - name: bootstrap
+              mountPath: {{ .Values.bootstrap.configDir }}/calendars.json
+              subPath: calendars.json
+              readOnly: true
+            {{- end }}
+            {{- range .Values.bootstrap.extraMounts }}
+            - name: hhq-extra-{{ .name }}
+              mountPath: {{ .mountPath }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
+              {{- end }}
+              readOnly: {{ if hasKey . "readOnly" }}{{ .readOnly }}{{ else }}true{{ end }}
+            {{- end }}
+            {{- if .Values.plugins }}
+            - name: plugins-config
+              mountPath: {{ .Values.bootstrap.configDir }}/plugins.json
+              subPath: plugins.json
+              readOnly: true
+            {{- end }}
+        {{- range .Values.plugins }}
+        {{- $useHhqDb := true }}
+        {{- if hasKey . "useHhqDbSecret" }}
+        {{- $useHhqDb = .useHhqDbSecret }}
+        {{- end }}
+        - name: {{ .name }}
+          image: "{{ .image.repository }}:{{ .image.tag }}"
+          imagePullPolicy: {{ .image.pullPolicy | default "IfNotPresent" }}
+          ports:
+            - name: {{ include "hhq.pluginPortName" .name }}
+              containerPort: {{ .port }}
+          env:
+            - name: LISTEN_ADDR
+              value: {{ printf ":%v" .port | quote }}
+            - name: CONFIG_DIR
+              value: {{ include "hhq.pluginConfigDir" .name | trim | quote }}
+            {{- if $useHhqDb }}
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.hhq.existingSecrets.db }}
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.hhq.existingSecrets.db }}
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.hhq.existingSecrets.db }}
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.hhq.existingSecrets.db }}
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.hhq.existingSecrets.db }}
+                  key: password
+            {{- else }}
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret.db }}
+                  key: host
+            - name: DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret.db }}
+                  key: port
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret.db }}
+                  key: dbname
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret.db }}
+                  key: user
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret.db }}
+                  key: password
+            {{- end }}
+            {{- range $key, $value := .env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          {{- if .existingSecret.app }}
+          envFrom:
+            - secretRef:
+                name: {{ .existingSecret.app }}
+          {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            {{- if .resources }}
+            {{- toYaml .resources | nindent 12 }}
+            {{- else }}
+            {{- toYaml $.Values.hhq.resources | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ include "hhq.pluginPortName" .name }}
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ include "hhq.pluginPortName" .name }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: {{ .name }}-tmp
+              mountPath: /tmp
+            {{- if .bootstrapFiles }}
+            - name: {{ .name }}-bootstrap
+              mountPath: {{ include "hhq.pluginConfigDir" .name | trim }}
+              readOnly: true
+            {{- end }}
+            {{- $pluginName := .name }}
+            {{- range .extraMounts }}
+            - name: {{ $pluginName }}-extra-{{ .name }}
+              mountPath: {{ .mountPath }}
+              {{- if .subPath }}
+              subPath: {{ .subPath }}
+              {{- end }}
+              readOnly: {{ if hasKey . "readOnly" }}{{ .readOnly }}{{ else }}true{{ end }}
+            {{- end }}
+        {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if or .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
+        - name: bootstrap
+          configMap:
+            name: {{ include "hhq.fullname" . }}-bootstrap
+        {{- end }}
+        {{- range .Values.bootstrap.extraMounts }}
+        - name: hhq-extra-{{ .name }}
+          secret:
+            secretName: {{ .secretName }}
+            {{- if .items }}
+            items:
+              {{- toYaml .items | nindent 14 }}
+            {{- end }}
+            {{- if .defaultMode }}
+            defaultMode: {{ .defaultMode }}
+            {{- end }}
+        {{- end }}
+        {{- if .Values.plugins }}
+        - name: plugins-config
+          configMap:
+            name: {{ include "hhq.fullname" . }}-plugins
+        {{- end }}
+        {{- range .Values.plugins }}
+        - name: {{ .name }}-tmp
+          emptyDir: {}
+        {{- if .bootstrapFiles }}
+        - name: {{ .name }}-bootstrap
+          configMap:
+            name: {{ include "hhq.fullname" $ }}-plugin-{{ .name }}-bootstrap
+        {{- end }}
+        {{- $pluginName := .name }}
+        {{- range .extraMounts }}
+        - name: {{ $pluginName }}-extra-{{ .name }}
+          secret:
+            secretName: {{ .secretName }}
+            {{- if .items }}
+            items:
+              {{- toYaml .items | nindent 14 }}
+            {{- end }}
+            {{- if .defaultMode }}
+            defaultMode: {{ .defaultMode }}
+            {{- end }}
+        {{- end }}
+        {{- end }}

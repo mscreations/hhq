@@ -15,15 +15,21 @@
 
 // Package logging provides a minimal leveled logger on top of the standard
 // library's log package. Level is controlled by the LOG_LEVEL environment
-// variable (debug, info, warn, error - default info). Kept intentionally
-// simple (no external logging library) since this project doubles as a Go
-// learning exercise and the app's logging needs are modest.
+// variable (debug, info, warn, error - default info). Output format is
+// controlled by LOG_FORMAT (text, json - default text); json emits one
+// JSON object per line (time/level/msg) for log aggregators like Loki that
+// parse Kubernetes container logs. Kept intentionally simple (no external
+// logging library) since this project doubles as a Go learning exercise and
+// the app's logging needs are modest.
 package logging
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"strings"
+	"time"
 )
 
 type Level int
@@ -35,10 +41,32 @@ const (
 	LevelError
 )
 
+func (l Level) String() string {
+	switch l {
+	case LevelDebug:
+		return "debug"
+	case LevelWarn:
+		return "warn"
+	case LevelError:
+		return "error"
+	default:
+		return "info"
+	}
+}
+
+type OutputFormat int
+
+const (
+	FormatText OutputFormat = iota
+	FormatJSON
+)
+
 var current = LevelInfo
+var format = FormatText
 
 func init() {
 	current = levelFromEnv(os.Getenv("LOG_LEVEL"))
+	format = formatFromEnv(os.Getenv("LOG_FORMAT"))
 }
 
 func levelFromEnv(v string) Level {
@@ -54,6 +82,15 @@ func levelFromEnv(v string) Level {
 	}
 }
 
+func formatFromEnv(v string) OutputFormat {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "json":
+		return FormatJSON
+	default:
+		return FormatText
+	}
+}
+
 // Enabled reports whether debug-level logging is on, so call sites can guard
 // expensive-to-build debug messages (e.g. dumping full event payloads)
 // without paying the formatting cost when debug logging is off.
@@ -61,25 +98,48 @@ func DebugEnabled() bool {
 	return current <= LevelDebug
 }
 
+type jsonEntry struct {
+	Time  string `json:"time"`
+	Level string `json:"level"`
+	Msg   string `json:"msg"`
+}
+
+func write(level Level, msg string) {
+	if format == FormatJSON {
+		b, err := json.Marshal(jsonEntry{
+			Time:  time.Now().Format(time.RFC3339Nano),
+			Level: level.String(),
+			Msg:   msg,
+		})
+		if err != nil {
+			log.Printf("[%s] %s", strings.ToUpper(level.String()), msg)
+			return
+		}
+		log.Writer().Write(append(b, '\n'))
+		return
+	}
+	log.Printf("[%s] %s", strings.ToUpper(level.String()), msg)
+}
+
 func Debugf(format string, args ...any) {
 	if current <= LevelDebug {
-		log.Printf("[DEBUG] "+format, args...)
+		write(LevelDebug, fmt.Sprintf(format, args...))
 	}
 }
 
 func Infof(format string, args ...any) {
 	if current <= LevelInfo {
-		log.Printf("[INFO] "+format, args...)
+		write(LevelInfo, fmt.Sprintf(format, args...))
 	}
 }
 
 func Warnf(format string, args ...any) {
 	if current <= LevelWarn {
-		log.Printf("[WARN] "+format, args...)
+		write(LevelWarn, fmt.Sprintf(format, args...))
 	}
 }
 
 // Errorf always logs, regardless of LOG_LEVEL - errors are never suppressed.
 func Errorf(format string, args ...any) {
-	log.Printf("[ERROR] "+format, args...)
+	write(LevelError, fmt.Sprintf(format, args...))
 }

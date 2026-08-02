@@ -17,6 +17,7 @@ package plugins
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -24,6 +25,7 @@ import (
 )
 
 func TestRegisterSuccess(t *testing.T) {
+	var gotSecret string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -31,31 +33,55 @@ func TestRegisterSuccess(t *testing.T) {
 		if r.URL.Path != "/register" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+		gotSecret = r.Header.Get(connectionSecretHeader)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"token":"secret-token"}`))
 	}))
 	t.Cleanup(srv.Close)
 
-	token, err := Register(context.Background(), srv.URL)
+	token, err := Register(context.Background(), srv.URL, "test-secret")
 	if err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 	if token != "secret-token" {
 		t.Fatalf("token = %q", token)
 	}
+	if gotSecret != "test-secret" {
+		t.Fatalf("connection secret header = %q, want %q", gotSecret, "test-secret")
+	}
 }
 
 func TestRegisterRequestCreationError(t *testing.T) {
-	_, err := Register(context.Background(), ":not-a-url")
+	_, err := Register(context.Background(), ":not-a-url", "test-secret")
 	if err == nil {
 		t.Fatal("expected an error constructing the request")
 	}
 }
 
 func TestRegisterDoError(t *testing.T) {
-	_, err := Register(context.Background(), "http://127.0.0.1:1")
+	_, err := Register(context.Background(), "http://127.0.0.1:1", "test-secret")
 	if err == nil || !strings.Contains(err.Error(), "registering") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// TestRegisterUnauthorizedStatusIsConnectionSecretMismatch is a direct
+// regression test for the 401-vs-403 distinction (see this file's doc
+// comment and PLUGINS.md): a plugin rejecting the connection secret with
+// 401 must be recognized as ErrConnectionSecretMismatch specifically, with
+// an actionable message, not treated as a generic/transient failure.
+func TestRegisterUnauthorizedStatusIsConnectionSecretMismatch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := Register(context.Background(), srv.URL, "wrong-secret")
+	if !errors.Is(err, ErrConnectionSecretMismatch) {
+		t.Fatalf("err = %v, want errors.Is(err, ErrConnectionSecretMismatch)", err)
+	}
+	if !strings.Contains(err.Error(), "PLUGIN_CONNECTION_SECRET") {
+		t.Fatalf("err = %v, want an actionable message mentioning PLUGIN_CONNECTION_SECRET", err)
 	}
 }
 
@@ -65,7 +91,7 @@ func TestRegisterNonOKStatus(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := Register(context.Background(), srv.URL)
+	_, err := Register(context.Background(), srv.URL, "test-secret")
 	if err == nil || !strings.Contains(err.Error(), "unexpected status 403") {
 		t.Fatalf("err = %v", err)
 	}
@@ -78,7 +104,7 @@ func TestRegisterDecodeError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := Register(context.Background(), srv.URL)
+	_, err := Register(context.Background(), srv.URL, "test-secret")
 	if err == nil || !strings.Contains(err.Error(), "decoding register response") {
 		t.Fatalf("err = %v", err)
 	}
@@ -91,7 +117,7 @@ func TestRegisterEmptyToken(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	_, err := Register(context.Background(), srv.URL)
+	_, err := Register(context.Background(), srv.URL, "test-secret")
 	if err == nil || !strings.Contains(err.Error(), "empty token") {
 		t.Fatalf("err = %v", err)
 	}

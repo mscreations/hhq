@@ -90,10 +90,13 @@ func injectBackLink(html string) string {
 // including its own error responses for a request-creation failure or a
 // response-body read failure, both of which are effectively-never-happens
 // local/plugin-response-shape bugs rather than "plugin is down". A non-nil
-// return means w was NOT written to - the plugin itself could not be
-// reached at all (connection refused/timeout/DNS failure) - so the caller
-// (PluginSettingsPage) can render its own friendlier, modal-driven message
-// instead of dumping a raw dial error onto a bare page.
+// return means w was NOT written to - either the plugin itself could not be
+// reached at all (connection refused/timeout/DNS failure), or it returned
+// 403 Forbidden (wrapped as ErrForbidden - the stored token no longer
+// matches what the plugin has, see internal/handlers/plugin_auth.go's
+// callWithReauth, which retries this call once with a freshly re-registered
+// token) - so the caller (PluginSettingsPage) can render its own friendlier,
+// modal-driven message instead of dumping a raw dial error onto a bare page.
 func ProxySettings(w http.ResponseWriter, r *http.Request, baseURL, token, csrfToken string) error {
 	ctx, cancel := context.WithTimeout(r.Context(), settingsProxyTimeout)
 	defer cancel()
@@ -123,6 +126,13 @@ func ProxySettings(w http.ResponseWriter, r *http.Request, baseURL, token, csrfT
 		return fmt.Errorf("plugin settings page unreachable: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusForbidden {
+		// Nothing has been written to w yet - safe for the caller to retry
+		// this whole call once with a freshly re-registered token (see
+		// internal/handlers/plugin_auth.go's callWithReauth).
+		return fmt.Errorf("plugin settings page: %w", ErrForbidden)
+	}
 
 	ct := resp.Header.Get("Content-Type")
 	if ct != "" {

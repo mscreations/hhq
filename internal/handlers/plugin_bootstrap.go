@@ -112,6 +112,94 @@ func (a *App) BootstrapPlugins(ctx context.Context, entries []config.PluginBoots
 	}
 }
 
+// pluginCalendarCleanupGracePeriod is how long after startup hhq waits before
+// checking for orphaned plugin-managed calendar accounts (see
+// CleanupOrphanedPluginCalendars) - long enough that ensurePluginReady's 15s
+// registration retry (pluginRegistrationRetryInterval) has had several real
+// chances to succeed even if hhq and a slow-starting plugin came up at the
+// same instant, short enough that a genuinely-removed plugin's synthetic
+// calendar and its cached events don't linger indefinitely. var (not const)
+// so tests can shrink it rather than waiting out the real default.
+var pluginCalendarCleanupGracePeriod = 3 * time.Minute
+
+// SchedulePluginCalendarCleanup runs CleanupOrphanedPluginCalendars exactly
+// once, pluginCalendarCleanupGracePeriod after being called, then returns -
+// it does not repeat. Meant to be called once from main.go right after the
+// bootstrap files (including plugins.json) have been reconciled. ctx is the
+// app's shutdown-aware context, so a pending check is abandoned cleanly if
+// the process shuts down before the grace period elapses.
+func (a *App) SchedulePluginCalendarCleanup(ctx context.Context) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pluginCalendarCleanupGracePeriod):
+		}
+		a.CleanupOrphanedPluginCalendars(ctx)
+	}()
+}
+
+// CleanupOrphanedPluginCalendars removes any ProviderPlugin, BootstrapManaged
+// calendar account whose owning plugin either no longer exists (e.g. it was
+// removed from plugins.json - BootstrapPlugins' own removal loop deletes the
+// plugin row, but NOT its synthetic calendar_accounts row: hhq_plugins.
+// calendar_id is ON DELETE SET NULL, not the other way around, so nothing
+// else ever cleans this up on its own) or has never once connected
+// successfully (LastHealthyAt unset - covers both a plugin that's still
+// failing to register and one whose row is simply gone). Deleting the
+// account cascades to its synthetic calendar and cached events, same as the
+// dashboard's own delete button.
+//
+// This is deliberately NOT run immediately at startup (see
+// BootstrapCalendarAccounts, which used to delete these accounts on every
+// boot before a plugin had any chance to register - the bug this function
+// replaces) - it's meant to run once, well after boot, via
+// SchedulePluginCalendarCleanup. A plugin that only manages to connect after
+// this check has already removed its account isn't stuck either: the next
+// successful manifest fetch re-provisions a fresh synthetic calendar via
+// ensurePluginCalendar, just with a new id/color and an empty events cache
+// that repopulates on its next sync.
+func (a *App) CleanupOrphanedPluginCalendars(ctx context.Context) {
+	accounts, err := a.CalendarAccounts.ListAll(ctx)
+	if err != nil {
+		logging.Errorf("plugin calendar cleanup: listing calendar accounts: %v", err)
+		return
+	}
+
+	for _, account := range accounts {
+		if account.Provider != models.ProviderPlugin || !account.BootstrapManaged {
+			continue
+		}
+
+		cals, err := a.Calendars.ListForAccount(ctx, account.ID)
+		if err != nil {
+			logging.Errorf("plugin calendar cleanup: listing calendars for account %q (id=%d): %v", account.Name, account.ID, err)
+			continue
+		}
+		if len(cals) == 0 {
+			// Nothing provisioned yet to resolve a plugin from - this
+			// shouldn't normally happen (ensurePluginCalendar creates the
+			// account and its calendar together), so leave it rather than
+			// guess.
+			continue
+		}
+
+		plugin, err := a.Plugins.GetByCalendarID(ctx, cals[0].ID)
+		if err == nil && plugin.LastHealthyAt.Valid {
+			continue // owning plugin exists and has connected at least once
+		}
+
+		if err != nil {
+			logging.Infof("plugin calendar cleanup: removing calendar account %q (id=%d) - owning plugin no longer exists", account.Name, account.ID)
+		} else {
+			logging.Infof("plugin calendar cleanup: removing calendar account %q (id=%d) - plugin %q never connected within %s of startup", account.Name, account.ID, plugin.ID, pluginCalendarCleanupGracePeriod)
+		}
+		if err := a.CalendarAccounts.Delete(ctx, account.ID); err != nil {
+			logging.Errorf("plugin calendar cleanup: removing calendar account %q (id=%d): %v", account.Name, account.ID, err)
+		}
+	}
+}
+
 // ensurePluginReady makes one immediate attempt to get id ready to talk to
 // (self-registered, with its manifest cached) and, if that fails because the
 // plugin isn't reachable yet, keeps retrying in the background every
@@ -170,18 +258,17 @@ func (a *App) tryRegisterAndRefresh(ctx context.Context, id, baseURL string) boo
 			return true // not a transient error - retrying won't help
 		}
 	} else {
-		token, err = plugins.Register(ctx, baseURL)
+		token, err = a.reregisterPlugin(ctx, id, baseURL)
 		if err != nil {
-			logging.Warnf("plugin %q: not yet reachable to self-register (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
-			return false
-		}
-		encryptedToken, err := a.Encryptor.Encrypt(token)
-		if err != nil {
-			logging.Errorf("plugin %q: encrypting received token: %v", id, err)
-			return false
-		}
-		if err := a.Plugins.SetToken(ctx, id, encryptedToken); err != nil {
-			logging.Errorf("plugin %q: storing received token: %v", id, err)
+			if errors.Is(err, plugins.ErrConnectionSecretMismatch) {
+				// Not a "plugin isn't up yet" situation - this is a standing
+				// operator misconfiguration that won't resolve on its own, so
+				// it's logged louder even though the retry loop still runs
+				// (in case the operator fixes it while hhq is up).
+				logging.Errorf("plugin %q: %v (will keep retrying every %s)", id, err, pluginRegistrationRetryInterval)
+			} else {
+				logging.Warnf("plugin %q: not yet reachable to self-register (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+			}
 			return false
 		}
 		logging.Infof("plugin %q: self-registered successfully", id)
@@ -198,28 +285,90 @@ func (a *App) tryRegisterAndRefresh(ctx context.Context, id, baseURL string) boo
 // so callers (tryRegisterAndRefresh) know whether to keep retrying.
 func (a *App) refreshPluginManifest(ctx context.Context, id, baseURL, token string) bool {
 	manifest, err := plugins.FetchManifest(ctx, baseURL, token)
+	if errors.Is(err, plugins.ErrForbidden) {
+		// The token we were just handed (or had stored) is no longer valid -
+		// re-register once and retry with the fresh token before giving up
+		// (see retryOnForbidden for the same one-shot pattern used
+		// elsewhere).
+		logging.Warnf("plugin %q: manifest fetch rejected token (403) - re-registering", id)
+		freshToken, rerr := a.reregisterPlugin(ctx, id, baseURL)
+		if rerr != nil {
+			err = rerr // surface *why* re-registration itself failed, not the original 403
+		} else {
+			token = freshToken
+			manifest, err = plugins.FetchManifest(ctx, baseURL, token)
+		}
+	}
 	if err != nil {
-		logging.Warnf("plugin %q: fetching manifest failed (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+		if errors.Is(err, plugins.ErrConnectionSecretMismatch) {
+			logging.Errorf("plugin %q: %v (will keep retrying every %s)", id, err, pluginRegistrationRetryInterval)
+		} else {
+			logging.Warnf("plugin %q: fetching manifest failed (will retry in %s): %v", id, pluginRegistrationRetryInterval, err)
+		}
 		_ = a.Plugins.MarkHealth(ctx, id, err)
 		return false
 	}
 
-	viewLabel, viewIcon := nullableViewSpec(manifest)
 	version := sql.NullString{String: manifest.Version, Valid: manifest.Version != ""}
-	if err := a.Plugins.UpdateManifest(ctx, id, manifest.View.Enabled, viewLabel, viewIcon, manifest.ProvidesEvents, version); err != nil {
+	if err := a.Plugins.UpdateManifest(ctx, id, manifest.ProvidesEvents, version); err != nil {
 		logging.Errorf("plugin %q: caching manifest: %v", id, err)
 		return false
 	}
+	if err := a.Plugins.ReplaceViews(ctx, id, manifestViews(manifest)); err != nil {
+		logging.Errorf("plugin %q: caching views: %v", id, err)
+		return false
+	}
 	_ = a.Plugins.MarkHealth(ctx, id, nil)
-	logging.Infof("plugin %q: manifest refreshed (view_enabled=%v, provides_events=%v)", id, manifest.View.Enabled, manifest.ProvidesEvents)
+	logging.Infof("plugin %q: manifest refreshed (views=%d, provides_events=%v)", id, len(manifest.Views), manifest.ProvidesEvents)
 
 	if manifest.ProvidesEvents {
 		if err := a.ensurePluginCalendar(ctx, id, manifest.Name); err != nil {
 			logging.Errorf("plugin %q: provisioning synthetic calendar: %v", id, err)
 			return false
 		}
+		// A manifest refresh can be the first time a plugin's synthetic
+		// calendar exists (ensurePluginCalendar just created it above) or can
+		// follow a period where the plugin was unreachable - either way,
+		// don't leave its events stale until the scheduler's next periodic
+		// tick (s.Cfg.PluginSyncInterval, potentially many minutes away);
+		// sync it now. Runs on the calling goroutine deliberately (matching
+		// the FetchManifest call above, which already blocks this same
+		// function on network I/O) rather than in a detached goroutine - a
+		// detached sync would race PruneStale against anything else that
+		// touches the plugin's synthetic calendar immediately after
+		// bootstrap/registration returns.
+		a.syncPluginEvents(ctx, id)
 	}
 	return true
+}
+
+// syncPluginEvents fetches plugin id's current synthetic events via the same
+// plugins.SyncOne routine the scheduler's periodic pass and the dashboard's
+// "Resync Now" button use (see internal/handlers/sync.go's syncPluginAccount
+// and internal/scheduler/plugin_sync.go's syncAllPlugins) - called right
+// after refreshPluginManifest confirms the plugin's synthetic calendar is
+// provisioned, so a freshly (re)registered plugin's events show up on the
+// kiosk immediately instead of waiting for the next scheduled sync.
+func (a *App) syncPluginEvents(ctx context.Context, id string) {
+	plugin, err := a.Plugins.GetByID(ctx, id)
+	if err != nil {
+		logging.Errorf("plugin %q: loading before post-refresh event sync: %v", id, err)
+		return
+	}
+
+	sc := plugins.SyncContext{
+		Plugins:          a.Plugins,
+		Calendars:        a.Calendars,
+		Events:           a.Events,
+		CalendarAccounts: a.CalendarAccounts,
+		Encryptor:        a.Encryptor,
+		ConnectionSecret: a.Cfg.PluginConnectionSecret,
+	}
+	if err := sc.SyncOne(ctx, *plugin, a.Cfg.CalendarWindowDays); err != nil {
+		logging.Errorf("plugin %q: post-refresh event sync failed: %v", id, err)
+	} else {
+		logging.Infof("plugin %q: post-refresh event sync succeeded", id)
+	}
 }
 
 // ensurePluginCalendar auto-creates a dedicated calendar_accounts/calendars
@@ -264,13 +413,22 @@ func (a *App) ensurePluginCalendar(ctx context.Context, id, displayName string) 
 	return nil
 }
 
-// nullableViewSpec converts a fetched Manifest's view fields into the
-// nullable columns hhq stores - a plugin that opts out of a view
-// (View.Enabled == false) gets NULL/NULL.
-func nullableViewSpec(m *plugins.Manifest) (sql.NullString, sql.NullString) {
-	if !m.View.Enabled {
-		return sql.NullString{}, sql.NullString{}
+// manifestViews converts a fetched Manifest's view list into the
+// []models.PluginView shape PluginStore.ReplaceViews stores, keeping only
+// the views the plugin currently has enabled (a disabled or omitted view is
+// simply left out, which is what causes ReplaceViews to drop its nav
+// button on this refresh).
+func manifestViews(m *plugins.Manifest) []models.PluginView {
+	views := make([]models.PluginView, 0, len(m.Views))
+	for _, v := range m.Views {
+		if !v.Enabled {
+			continue
+		}
+		views = append(views, models.PluginView{
+			ViewID: v.ID,
+			Label:  v.Label,
+			Icon:   v.Icon,
+		})
 	}
-	return sql.NullString{String: m.View.Label, Valid: true},
-		sql.NullString{String: m.View.Icon, Valid: true}
+	return views
 }

@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mscreations/hhq/internal/auth"
@@ -30,6 +31,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/report"
 	"github.com/mscreations/hhq/internal/util"
@@ -51,6 +53,11 @@ type Scheduler struct {
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
 	Release          *release.Cache
+	PluginVersions   *plugins.VersionCache
+
+	// Version is the running app's version (see main.Version), used only to
+	// decide which of GitHub's APIs runReleaseCheck polls - see checkRelease.
+	Version string
 }
 
 // Run blocks forever, dispatching each job on its own ticker. Intended to be
@@ -64,6 +71,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	go s.runWeatherRefresh(ctx)
 	go s.runPluginSync(ctx)
 	go s.runReleaseCheck(ctx)
+	go s.runPluginVersionCheck(ctx)
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {
@@ -406,8 +414,20 @@ func (s *Scheduler) runReleaseCheck(ctx context.Context) {
 	}
 }
 
+// checkRelease polls GitHub for the newest known version. A promoted-release
+// build (the default) checks /releases/latest, same as always. A dev build
+// (Version ends in "-dev") checks the tags API instead: dev only ever gets
+// git tags pushed on every commit, never a GitHub Release (only
+// version-main.yml's promotion to main cuts one of those), so
+// /releases/latest would only ever reflect main and never show a dev build
+// as up to date with dev's own newest tag.
 func (s *Scheduler) checkRelease(ctx context.Context) {
-	latest, err := release.FetchLatest(ctx)
+	fetch := release.FetchLatest
+	if strings.HasSuffix(s.Version, "-dev") {
+		fetch = release.FetchLatestTag
+	}
+
+	latest, err := fetch(ctx)
 	if err != nil {
 		logging.Debugf("scheduler: checking for a newer release: %v", err)
 		return

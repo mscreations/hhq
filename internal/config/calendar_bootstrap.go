@@ -18,6 +18,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/mscreations/hhq/internal/models"
@@ -32,6 +33,32 @@ type CalendarAccountBootstrap struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// PasswordFile is an alternative to Password - a path to a file
+	// containing just the password (e.g. a Kubernetes Secret volume mount),
+	// so calendars.json itself can hold no secret material and live in a
+	// plain ConfigMap. Mutually exclusive with Password - see
+	// ResolvePassword.
+	PasswordFile string `json:"password_file,omitempty"`
+}
+
+// ResolvePassword returns this entry's effective password: Password if set,
+// or the trimmed contents of PasswordFile if that's set instead. Returns an
+// error if both are set (ambiguous) or if PasswordFile can't be read. Called
+// at bootstrap/reconcile time (not JSON-parse time) by
+// BootstrapCalendarAccounts, so one bad entry's unreadable file doesn't fail
+// the whole calendars.json.
+func (e CalendarAccountBootstrap) ResolvePassword() (string, error) {
+	if e.Password != "" && e.PasswordFile != "" {
+		return "", fmt.Errorf("password and password_file are mutually exclusive")
+	}
+	if e.PasswordFile == "" {
+		return e.Password, nil
+	}
+	data, err := os.ReadFile(e.PasswordFile)
+	if err != nil {
+		return "", fmt.Errorf("reading password_file %q: %w", e.PasswordFile, err)
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 // ParseCalendarAccountsBootstrap unmarshals CONFIG_DIR/calendars.json's

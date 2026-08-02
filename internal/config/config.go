@@ -93,6 +93,16 @@ type Config struct {
 	// minimum (see EncryptionKey's field comment above).
 	GoogleOAuthClientID     string
 	GoogleOAuthClientSecret string
+
+	// PluginConnectionSecret is a shared secret hhq presents to a plugin's
+	// POST /register (see internal/plugins/register.go and PLUGINS.md's
+	// "Authentication: self-registration") - it's what lets /register be
+	// safely re-callable (to recover a lost/rejected token) instead of only
+	// ever succeeding once. Optional: defaults to "hhq-plugin-connection" if
+	// unset, so there's nothing to hand-generate for a single-family/
+	// single-plugin deployment; set it explicitly if you want a real secret
+	// (e.g. multiple untrusted networks could reach a plugin's port).
+	PluginConnectionSecret string
 }
 
 func Load() (*Config, error) {
@@ -123,6 +133,8 @@ func Load() (*Config, error) {
 
 		GoogleOAuthClientID:     Getenv("GOOGLE_OAUTH_CLIENT_ID"),
 		GoogleOAuthClientSecret: Getenv("GOOGLE_OAUTH_CLIENT_SECRET"),
+
+		PluginConnectionSecret: getEnvDefault("PLUGIN_CONNECTION_SECRET", "hhq-plugin-connection"),
 	}
 
 	var err error

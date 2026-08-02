@@ -64,6 +64,7 @@ func (s *Scheduler) syncAllPlugins(ctx context.Context) {
 		Events:           s.Events,
 		CalendarAccounts: s.CalendarAccounts,
 		Encryptor:        s.Encryptor,
+		ConnectionSecret: s.Cfg.PluginConnectionSecret,
 	}
 	for _, p := range list {
 		if err := sc.SyncOne(ctx, p, s.Cfg.CalendarWindowDays); err != nil {
@@ -71,5 +72,53 @@ func (s *Scheduler) syncAllPlugins(ctx context.Context) {
 		} else {
 			logging.Debugf("scheduler: plugin %q synced successfully", p.ID)
 		}
+	}
+}
+
+// runPluginVersionCheck periodically asks every registered, enabled plugin
+// for its own GET /version (unauthenticated - the plugin reports whether an
+// upgrade is available itself, hhq no longer needs to know its repo or talk
+// to GitHub on its behalf), mirroring runReleaseCheck's shape (check once
+// immediately on startup, then on a ticker) - reuses s.Cfg.ReleaseCheckInterval
+// rather than a separate config knob, since this is the same kind of cheap,
+// infrequent poll as hhq's own self-update check.
+func (s *Scheduler) runPluginVersionCheck(ctx context.Context) {
+	s.checkPluginVersions(ctx)
+	ticker := time.NewTicker(s.Cfg.ReleaseCheckInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.checkPluginVersions(ctx)
+		}
+	}
+}
+
+// checkPluginVersions fetches each enabled plugin's GET /version and caches
+// the result in s.PluginVersions for the parent dashboard to read (see
+// internal/handlers/parent.go's buildPluginRows). A plugin that fails to
+// respond (not yet up, network error, etc.) is skipped for this tick,
+// leaving its previously cached value (if any) in place rather than
+// clearing it.
+func (s *Scheduler) checkPluginVersions(ctx context.Context) {
+	list, err := s.Plugins.ListAll(ctx)
+	if err != nil {
+		logging.Errorf("scheduler: listing plugins for version check: %v", err)
+		return
+	}
+
+	for _, p := range list {
+		if !p.Enabled {
+			continue
+		}
+		info, err := plugins.FetchVersion(ctx, p.BaseURL)
+		if err != nil {
+			logging.Debugf("scheduler: checking plugin %q version: %v", p.ID, err)
+			continue
+		}
+		s.PluginVersions.Set(p.ID, info)
+		logging.Debugf("scheduler: plugin %q reports version %s (upgradeAvailable=%v)", p.ID, info.Version, info.UpgradeAvailable)
 	}
 }

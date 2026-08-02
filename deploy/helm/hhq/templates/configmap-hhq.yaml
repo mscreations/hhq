@@ -1,0 +1,16 @@
+# Non-secret configuration for the hhq container. Anything sensitive (DB
+# creds, SMTP creds, signing keys) is expected to live in the existing
+# Secrets referenced under .Values.hhq.existingSecrets instead.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hhq.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hhq.labels" . | nindent 4 }}
+data:
+  CONFIG_DIR: {{ .Values.bootstrap.configDir | quote }}
+  LISTEN_ADDR: {{ printf ":%v" .Values.hhq.port | quote }}
+  {{- range $key, $value := .Values.hhq.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

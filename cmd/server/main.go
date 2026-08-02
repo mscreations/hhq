@@ -42,6 +42,7 @@ import (
 	"github.com/mscreations/hhq/internal/handlers"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
 	"github.com/mscreations/hhq/internal/util"
@@ -119,10 +120,17 @@ func bootstrapFirstParent(ctx context.Context, users *models.UserStore) error {
 	if err != nil {
 		return err
 	}
-	if _, err := users.CreateParent(ctx, name, emailAddr, hash); err != nil {
+	id, err := users.CreateParent(ctx, name, emailAddr, hash)
+	if err != nil {
 		return err
 	}
 	logging.Infof("bootstrap: created initial parent account %q - remove BOOTSTRAP_PARENT_* env vars after confirming login works", emailAddr)
+
+	if avatarFile := config.Getenv("BOOTSTRAP_PARENT_AVATAR_FILE"); avatarFile != "" {
+		if err := handlers.ApplyUserAvatarFile(ctx, users, id, avatarFile); err != nil {
+			logging.Errorf("bootstrap: applying BOOTSTRAP_PARENT_AVATAR_FILE for initial parent %q: %v", emailAddr, err)
+		}
+	}
 	return nil
 }
 
@@ -205,7 +213,7 @@ func templateNames(t *template.Template) []string {
 }
 
 func main() {
-	logging.Infof("HappyHome Quest starting up (log level controlled by LOG_LEVEL env var, current effective level shown by debug messages below if LOG_LEVEL=debug)")
+	logging.Infof("HappyHome Quest starting up (version %s, log level controlled by LOG_LEVEL env var, current effective level shown by debug messages below if LOG_LEVEL=debug; log format controlled by LOG_FORMAT, text or json)", Version)
 	logging.Debugf("loading configuration from environment")
 
 	cfg, err := config.Load()
@@ -256,6 +264,7 @@ func main() {
 
 	weatherCache := &weather.Cache{}
 	releaseCache := &release.Cache{}
+	pluginVersionCache := &plugins.VersionCache{}
 
 	templateFuncs := template.FuncMap{
 		"colorName":       models.ColorName,
@@ -281,6 +290,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          &models.PluginStore{DB: conn},
 		Release:          releaseCache,
+		PluginVersions:   pluginVersionCache,
 		Approval:         auth.NewApprovalLinkSigner(approvalSecret),
 		Invite:           auth.NewApprovalLinkSigner(inviteSecret),
 		PasswordReset:    auth.NewApprovalLinkSigner(passwordResetSecret),
@@ -324,6 +334,7 @@ func main() {
 	bootstrapFromFile(ctx, configDir, "chores.json", "chore(s)", config.ParseChoresBootstrap, app.BootstrapChores)
 	bootstrapFromFile(ctx, configDir, "assignments.json", "assignment(s)", config.ParseAssignmentsBootstrap, app.BootstrapAssignments)
 	bootstrapFromFile(ctx, configDir, "plugins.json", "plugin(s)", config.ParsePluginsBootstrap, app.BootstrapPlugins)
+	app.SchedulePluginCalendarCleanup(ctx)
 
 	if location, latStr, lonStr, units := config.Getenv("WEATHER_LOCATION"), config.Getenv("WEATHER_LAT"), config.Getenv("WEATHER_LON"), config.Getenv("WEATHER_UNITS"); location != "" || (latStr != "" && lonStr != "") {
 		var lat, lon float64
@@ -358,6 +369,8 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          app.Plugins,
 		Release:          releaseCache,
+		PluginVersions:   pluginVersionCache,
+		Version:          Version,
 	}
 
 	logging.Debugf("starting background scheduler (calendar sync every %s, chore generation, session cleanup, weekly report)", cfg.CalendarSyncInterval)
@@ -415,6 +428,7 @@ func buildRouter(app *handlers.App) http.Handler {
 	// --- Kiosk: unauthenticated, view-only + chore-tap-to-complete ---
 	r.Get("/", app.KioskIndex)
 	r.Get("/kiosk/fragments/home", app.KioskFragmentHome)
+	r.Get("/kiosk/fragments/week", app.KioskFragmentWeek)
 	r.Get("/kiosk/fragments/agenda", app.KioskFragmentAgenda)
 	r.Get("/kiosk/fragments/calendar", app.KioskFragmentCalendar)
 	r.Get("/kiosk/fragments/chores", app.KioskFragmentChores)
@@ -423,7 +437,7 @@ func buildRouter(app *handlers.App) http.Handler {
 	r.Post("/kiosk/events/{id}/actions/{actionID}", app.KioskEventAction)
 	r.Get("/kiosk/fragments/weather", app.KioskFragmentWeather)
 	r.Get("/kiosk/weather/page", app.KioskWeatherPage)
-	r.Get("/kiosk/view/plugin/{id}", app.KioskPluginView)
+	r.Get("/kiosk/view/plugin/{id}/{viewID}", app.KioskPluginView)
 
 	// --- Avatars: unauthenticated (shown on the unauthenticated kiosk screen) ---
 	r.Get("/avatars/{id}", app.ServeAvatar)
@@ -463,8 +477,8 @@ func buildRouter(app *handlers.App) http.Handler {
 		r.Post("/parent/users/parents", app.CreateParent)
 		r.Post("/parent/users/{id}/resend-invite", app.ResendParentInvite)
 		r.Post("/parent/users/{id}/display-name", app.SetParentDisplayName)
-		r.Post("/parent/users/{id}/avatar", app.UploadChildAvatar)
-		r.Post("/parent/users/{id}/avatar/remove", app.RemoveChildAvatar)
+		r.Post("/parent/users/{id}/avatar", app.UploadUserAvatar)
+		r.Post("/parent/users/{id}/avatar/remove", app.RemoveUserAvatar)
 		r.Post("/parent/users/{id}/remove", app.RemoveUser)
 
 		r.Post("/parent/calendar-accounts", app.CreateCalendarAccount)

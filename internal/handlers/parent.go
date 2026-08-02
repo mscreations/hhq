@@ -59,6 +59,12 @@ type parentDashboardData struct {
 	WeatherLocationName string
 	WeatherUnits        string
 	WeatherRadarZoom    int
+	// KioskLayout/KioskGridMode/KioskGridStartHour/KioskGridEndHour back the
+	// 5-day calendar view's settings - see kiosk_week.go.
+	KioskLayout        string
+	KioskGridMode      string
+	KioskGridStartHour int
+	KioskGridEndHour   int
 	// WeeklyReportWeekday/Hour are the effective (settings-override-or-
 	// config-default) schedule for the automatic weekly report email - see
 	// scheduler.loadWeeklyReportSchedule. Weekdays holds the Sunday..Saturday
@@ -87,7 +93,7 @@ type parentDashboardData struct {
 	// the Pending Approvals card - avoids adding avatar columns to
 	// ChoreInstance's own JOIN queries (see avatarURLsByUserID in kiosk.go).
 	ChildAvatarByID map[int]string
-	Plugins         []models.Plugin
+	Plugins         []PluginRow
 	// PluginSettingsError is set when PluginSettingsPage couldn't reach a
 	// plugin - read back from the redirect query param the same way
 	// InviteError/SettingsError are, so the dashboard can show it in a modal
@@ -180,6 +186,14 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 	if err != nil {
 		return nil, err
 	}
+	kioskLayout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutClassic)
+	if err != nil {
+		return nil, err
+	}
+	kioskGrid, err := a.loadWeekGridConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	children, err := a.Users.ListChildren(ctx)
 	if err != nil {
@@ -225,6 +239,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 	if err != nil {
 		return nil, err
 	}
+	pluginRows := a.buildPluginRows(pluginList)
 
 	// Pending approvals: pull this week's instances and filter client-side here
 	// since it's a small dataset; fine to optimize with a dedicated query later.
@@ -264,7 +279,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		ChoreDefsByParent:     groupChoreDefsByUser(parents, choreDefs),
 		PendingApprovals:      pending,
 		ChildAvatarByID:       avatarByID,
-		Plugins:               pluginList,
+		Plugins:               pluginRows,
 		PluginSettingsError:   r.URL.Query().Get("plugin_settings_error"),
 		CSRFToken:             a.SessionMgr.CSRFToken(a.CSRF, r),
 		InviteError:           r.URL.Query().Get("invite_error"),
@@ -273,6 +288,10 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		WeatherLocationName:   weatherLocationName,
 		WeatherUnits:          weatherUnits,
 		WeatherRadarZoom:      weatherRadarZoom,
+		KioskLayout:           kioskLayout,
+		KioskGridMode:         kioskGrid.Mode,
+		KioskGridStartHour:    kioskGrid.StartHour,
+		KioskGridEndHour:      kioskGrid.EndHour,
 		DisplayNameSavedID:    parseIntOrZero(r.URL.Query().Get("display_name_saved")),
 		WeeklyReportWeekday:   weeklyReportWeekday,
 		WeeklyReportHour:      weeklyReportHour,
@@ -282,6 +301,40 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		UpdateAvailable:       updateAvailable,
 		LatestReleaseURL:      latestReleaseURL,
 	}, nil
+}
+
+// PluginRow wraps a models.Plugin with the dashboard's per-plugin
+// update-available check (see buildPluginRows) - kept separate from
+// models.Plugin itself since UpdateAvailable/LatestVersion/Changelog are
+// derived per-request from a.PluginVersions (each plugin's own self-reported
+// GET /version - see internal/plugins/version.go), not stored on the plugin.
+type PluginRow struct {
+	models.Plugin
+	UpdateAvailable bool
+	LatestVersion   string
+	Changelog       string
+}
+
+// buildPluginRows pairs each plugin with the scheduler's cached GET /version
+// result (see scheduler.checkPluginVersions). A plugin with nothing cached
+// yet (e.g. app just started, or the plugin hasn't responded) simply gets
+// UpdateAvailable = false.
+func (a *App) buildPluginRows(pluginList []models.Plugin) []PluginRow {
+	rows := make([]PluginRow, len(pluginList))
+	for i, p := range pluginList {
+		rows[i] = PluginRow{Plugin: p}
+		if a.PluginVersions == nil {
+			continue
+		}
+		info, ok := a.PluginVersions.Get(p.ID)
+		if !ok || !info.UpgradeAvailable {
+			continue
+		}
+		rows[i].UpdateAvailable = true
+		rows[i].LatestVersion = info.UpgradeVersion
+		rows[i].Changelog = info.Changelog
+	}
+	return rows
 }
 
 // checkUpdateAvailable compares the running version against the latest
@@ -481,6 +534,75 @@ func (a *App) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := a.Settings.Set(r.Context(), scheduler.SettingWeeklyReportHour, strconv.Itoa(weeklyReportHour)); err != nil {
 			logging.Errorf("parent: updating weekly report hour setting: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// The 4 kiosk fields below are all blank-means-keep-existing (same
+	// convention as weekly_report_weekday/hour above), so posting this form
+	// without them - e.g. a request that predates this feature, or any
+	// partial submission - never clobbers an already-configured layout.
+	if kioskLayoutStr := r.FormValue("kiosk_layout"); kioskLayoutStr != "" {
+		if kioskLayoutStr != kioskLayoutWeekly {
+			kioskLayoutStr = kioskLayoutClassic
+		}
+		if err := a.Settings.Set(r.Context(), settingKioskLayout, kioskLayoutStr); err != nil {
+			logging.Errorf("parent: updating kiosk_layout setting: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if kioskGridModeStr := r.FormValue("kiosk_grid_mode"); kioskGridModeStr != "" {
+		if kioskGridModeStr != kioskGridModeFull24 {
+			kioskGridModeStr = kioskGridModeFixed
+		}
+		if err := a.Settings.Set(r.Context(), settingKioskGridMode, kioskGridModeStr); err != nil {
+			logging.Errorf("parent: updating kiosk_grid_mode setting: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	kioskGridStartHourStr := r.FormValue("kiosk_grid_start_hour")
+	kioskGridEndHourStr := r.FormValue("kiosk_grid_end_hour")
+	if kioskGridStartHourStr != "" || kioskGridEndHourStr != "" {
+		current, err := a.loadWeekGridConfig(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		kioskGridStartHour, kioskGridEndHour := current.StartHour, current.EndHour
+		if kioskGridStartHourStr != "" {
+			h, ok := parseHour(kioskGridStartHourStr)
+			if !ok {
+				logging.Warnf("parent: rejecting invalid kiosk grid start hour %q", kioskGridStartHourStr)
+				a.respondSettingsError(w, r, "Calendar view start hour must be between 0 and 23.")
+				return
+			}
+			kioskGridStartHour = h
+		}
+		if kioskGridEndHourStr != "" {
+			h, ok := parseHour(kioskGridEndHourStr)
+			if !ok {
+				logging.Warnf("parent: rejecting invalid kiosk grid end hour %q", kioskGridEndHourStr)
+				a.respondSettingsError(w, r, "Calendar view end hour must be between 0 and 23.")
+				return
+			}
+			kioskGridEndHour = h
+		}
+		if kioskGridEndHour <= kioskGridStartHour {
+			a.respondSettingsError(w, r, "Calendar view end hour must be after the start hour.")
+			return
+		}
+		if err := a.Settings.Set(r.Context(), settingKioskGridStartHour, strconv.Itoa(kioskGridStartHour)); err != nil {
+			logging.Errorf("parent: updating kiosk_grid_start_hour setting: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := a.Settings.Set(r.Context(), settingKioskGridEndHour, strconv.Itoa(kioskGridEndHour)); err != nil {
+			logging.Errorf("parent: updating kiosk_grid_end_hour setting: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
