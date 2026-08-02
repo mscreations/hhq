@@ -338,20 +338,25 @@ instead.
   tracker), without their logic living in this codebase, e.g.:
   ```json
   [
-    {"id": "bill-tracker", "name": "Bill Tracker", "base_url": "http://bill-tracker.default.svc:8080", "enabled": true, "repo_url": "https://github.com/mscreations/billtracker-plugin"}
+    {"id": "bill-tracker", "name": "Bill Tracker", "base_url": "http://bill-tracker.default.svc:8080", "enabled": true}
   ]
   ```
   `id` is a stable slug (also used in the plugin's dashboard/kiosk URLs) -
   don't change it once deployed, since it's how hhq matches config entries
   to database rows across restarts.
 
-  `repo_url` is optional - when set to a plugin's GitHub repo, hhq
-  periodically checks that repo's Releases (or, for a `-dev`-suffixed
-  version, its tags) the same way it already checks its own repo for
-  updates, and shows a small update-available icon next to the plugin's
-  version on the parent dashboard's Plugins card when a newer one is found.
-  Leave it unset if the plugin isn't hosted on GitHub, or you'd rather not
-  be notified.
+  **Update-available icon is automatic, nothing to configure**: if a plugin
+  serves an unauthenticated `GET {base_url}/version` returning
+  ```json
+  {"version": "1.0.0", "upgradeAvailable": true, "upgradeVersion": "1.0.2", "changelog": "feat: Update versioning", "channel": "dev"}
+  ```
+  hhq polls it periodically (same cadence as its own self-update check,
+  `RELEASE_CHECK_INTERVAL_MINUTES`) and shows a small update-available icon
+  next to the plugin's version on the parent dashboard's Plugins card when
+  `upgradeAvailable` is true - hovering it shows `upgradeVersion`/`changelog`.
+  hhq never talks to GitHub (or any other host) on a plugin's behalf; each
+  plugin is responsible for knowing its own repo and checking it. A plugin
+  that doesn't implement `/version` simply never shows the icon.
 
   **Authentication is automatic, nothing to configure**: hhq and the plugin
   agree on a shared secret the first time hhq successfully reaches the
@@ -385,7 +390,7 @@ instead.
   cluster.
 
   **Local/dev convenience**: `plugins.json` entries only ever describe
-  `id`/`name`/`base_url`/`enabled`/`repo_url` - hhq expects the plugin to
+  `id`/`name`/`base_url`/`enabled` - hhq expects the plugin to
   already be running at `base_url` and never spawns anything itself (there
   used to be a `command`/`dir` field for that; it was removed since it
   couldn't be killed cleanly by a debugger's hard-stop on Windows). For

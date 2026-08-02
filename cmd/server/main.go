@@ -42,6 +42,7 @@ import (
 	"github.com/mscreations/hhq/internal/handlers"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
 	"github.com/mscreations/hhq/internal/util"
@@ -263,7 +264,7 @@ func main() {
 
 	weatherCache := &weather.Cache{}
 	releaseCache := &release.Cache{}
-	pluginReleaseCache := &release.PluginCache{}
+	pluginVersionCache := &plugins.VersionCache{}
 
 	templateFuncs := template.FuncMap{
 		"colorName":       models.ColorName,
@@ -289,7 +290,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          &models.PluginStore{DB: conn},
 		Release:          releaseCache,
-		PluginReleases:   pluginReleaseCache,
+		PluginVersions:   pluginVersionCache,
 		Approval:         auth.NewApprovalLinkSigner(approvalSecret),
 		Invite:           auth.NewApprovalLinkSigner(inviteSecret),
 		PasswordReset:    auth.NewApprovalLinkSigner(passwordResetSecret),
@@ -368,7 +369,7 @@ func main() {
 		Weather:          weatherCache,
 		Plugins:          app.Plugins,
 		Release:          releaseCache,
-		PluginReleases:   pluginReleaseCache,
+		PluginVersions:   pluginVersionCache,
 		Version:          Version,
 	}
 

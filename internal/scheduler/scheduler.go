@@ -31,6 +31,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/report"
 	"github.com/mscreations/hhq/internal/util"
@@ -52,7 +53,7 @@ type Scheduler struct {
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
 	Release          *release.Cache
-	PluginReleases   *release.PluginCache
+	PluginVersions   *plugins.VersionCache
 
 	// Version is the running app's version (see main.Version), used only to
 	// decide which of GitHub's APIs runReleaseCheck polls - see checkRelease.
@@ -70,7 +71,7 @@ func (s *Scheduler) Run(ctx context.Context) {
 	go s.runWeatherRefresh(ctx)
 	go s.runPluginSync(ctx)
 	go s.runReleaseCheck(ctx)
-	go s.runPluginUpdateCheck(ctx)
+	go s.runPluginVersionCheck(ctx)
 }
 
 func (s *Scheduler) runCalendarSync(ctx context.Context) {

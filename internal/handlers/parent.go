@@ -305,34 +305,34 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 
 // PluginRow wraps a models.Plugin with the dashboard's per-plugin
 // update-available check (see buildPluginRows) - kept separate from
-// models.Plugin itself since UpdateAvailable/LatestVersion/LatestReleaseURL
-// are derived per-request from a.PluginReleases, not stored on the plugin.
+// models.Plugin itself since UpdateAvailable/LatestVersion/Changelog are
+// derived per-request from a.PluginVersions (each plugin's own self-reported
+// GET /version - see internal/plugins/version.go), not stored on the plugin.
 type PluginRow struct {
 	models.Plugin
-	UpdateAvailable  bool
-	LatestVersion    string
-	LatestReleaseURL string
+	UpdateAvailable bool
+	LatestVersion   string
+	Changelog       string
 }
 
-// buildPluginRows pairs each plugin with the scheduler's cached
-// update-check result (see scheduler.checkPluginUpdates), mirroring
-// checkUpdateAvailable's app-level logic per plugin instead of just once
-// for hhq itself. A plugin with no repo_url configured, no reported
-// version, or nothing cached yet simply gets UpdateAvailable = false.
-func (a *App) buildPluginRows(plugins []models.Plugin) []PluginRow {
-	rows := make([]PluginRow, len(plugins))
-	for i, p := range plugins {
+// buildPluginRows pairs each plugin with the scheduler's cached GET /version
+// result (see scheduler.checkPluginVersions). A plugin with nothing cached
+// yet (e.g. app just started, or the plugin hasn't responded) simply gets
+// UpdateAvailable = false.
+func (a *App) buildPluginRows(pluginList []models.Plugin) []PluginRow {
+	rows := make([]PluginRow, len(pluginList))
+	for i, p := range pluginList {
 		rows[i] = PluginRow{Plugin: p}
-		if a.PluginReleases == nil || !p.RepoURL.Valid || !p.Version.Valid {
+		if a.PluginVersions == nil {
 			continue
 		}
-		latest, ok := a.PluginReleases.Get(p.ID)
-		if !ok || !release.IsNewer(p.Version.String, latest.Version) {
+		info, ok := a.PluginVersions.Get(p.ID)
+		if !ok || !info.UpgradeAvailable {
 			continue
 		}
 		rows[i].UpdateAvailable = true
-		rows[i].LatestVersion = latest.Version
-		rows[i].LatestReleaseURL = latest.URL
+		rows[i].LatestVersion = info.UpgradeVersion
+		rows[i].Changelog = info.Changelog
 	}
 	return rows
 }

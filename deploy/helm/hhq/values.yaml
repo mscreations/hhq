@@ -189,11 +189,6 @@ plugins: []
 # plugins:
 #   - name: billtracker
 #     displayName: "Bill Tracker"        # optional, defaults to name; used in plugins.json's "name" field
-#     # Optional GitHub repo URL, used in plugins.json's "repo_url" field so
-#     # hhq can periodically check for a newer version of this plugin and
-#     # show an update-available icon on the parent dashboard. Omit if the
-#     # plugin isn't hosted on GitHub, or you'd rather not be notified.
-#     repoURL: https://github.com/mscreations/billtracker-plugin
 #     image:
 #       repository: ghcr.io/mscreations/billtracker-plugin
 #       tag: latest

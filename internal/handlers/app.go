@@ -24,6 +24,7 @@ import (
 	"github.com/mscreations/hhq/internal/email"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
@@ -50,7 +51,7 @@ type App struct {
 	Weather          *weather.Cache
 	Plugins          *models.PluginStore
 	Release          *release.Cache
-	PluginReleases   *release.PluginCache
+	PluginVersions   *plugins.VersionCache
 
 	SessionMgr       *auth.SessionManager
 	Approval         *auth.ApprovalLinkSigner

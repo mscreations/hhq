@@ -67,8 +67,9 @@ func FetchLatest(ctx context.Context) (*Release, error) {
 }
 
 // FetchLatestFromRepo is FetchLatest generalized to an arbitrary GitHub
-// "releases/latest" API URL, so it can also check a plugin's own repo (see
-// CheckForUpdate) rather than only hhq's own hardcoded LatestReleaseURL.
+// "releases/latest" API URL rather than only hhq's own hardcoded
+// LatestReleaseURL - used by FetchLatest, and by tests pointing at a local
+// httptest server.
 func FetchLatestFromRepo(ctx context.Context, releaseURL string) (*Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseURL, nil)
 	if err != nil {
@@ -111,9 +112,9 @@ func FetchLatestTag(ctx context.Context) (*Release, error) {
 }
 
 // FetchLatestTagFromRepo is FetchLatestTag generalized to an arbitrary
-// GitHub "tags" API URL + repo web URL, so it can also check a plugin's own
-// repo (see CheckForUpdate) rather than only hhq's own hardcoded
-// LatestTagsURL/RepoWebURL.
+// GitHub "tags" API URL + repo web URL rather than only hhq's own hardcoded
+// LatestTagsURL/RepoWebURL - used by FetchLatestTag, and by tests pointing
+// at a local httptest server.
 func FetchLatestTagFromRepo(ctx context.Context, tagsURL, repoWebURL string) (*Release, error) {
 	const perPage = 100
 	const maxTagPages = 10
@@ -184,29 +185,6 @@ func tagURL(repoWebURL, tag string) string {
 		return repoWebURL + "/tree/" + tag
 	}
 	return repoWebURL + "/releases/tag/" + tag
-}
-
-// RepoAPIURLs derives a GitHub repo's "releases/latest" and "tags" API URLs
-// from its web URL (e.g. "https://github.com/owner/repo"), for checking a
-// plugin's own repo the same way hhq checks itself - see CheckForUpdate.
-func RepoAPIURLs(repoWebURL string) (releaseURL, tagsURL string) {
-	repoWebURL = strings.TrimSuffix(repoWebURL, "/")
-	apiBase := strings.Replace(repoWebURL, "https://github.com/", "https://api.github.com/repos/", 1)
-	return apiBase + "/releases/latest", apiBase + "/tags"
-}
-
-// CheckForUpdate checks repoWebURL's GitHub repo for a version newer than
-// currentVersion, the per-plugin equivalent of the scheduler's own
-// checkRelease for hhq itself. Mirrors checkRelease's release-vs-tag
-// selection: a "-dev" currentVersion checks the tags API (dev builds only
-// ever get a git tag, never a GitHub Release), anything else checks
-// releases/latest.
-func CheckForUpdate(ctx context.Context, repoWebURL, currentVersion string) (*Release, error) {
-	releaseURL, tagsURL := RepoAPIURLs(repoWebURL)
-	if strings.HasSuffix(currentVersion, "-dev") {
-		return FetchLatestTagFromRepo(ctx, tagsURL, repoWebURL)
-	}
-	return FetchLatestFromRepo(ctx, releaseURL)
 }
 
 // IsNewer reports whether latest is a newer version than current, per this

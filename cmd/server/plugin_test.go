@@ -28,7 +28,7 @@ import (
 
 	"github.com/mscreations/hhq/internal/config"
 	"github.com/mscreations/hhq/internal/models"
-	"github.com/mscreations/hhq/internal/release"
+	"github.com/mscreations/hhq/internal/plugins"
 )
 
 // fakePluginViewID is the fixed view id fakePluginServer's single registered
@@ -240,24 +240,27 @@ func TestTogglePlugin(t *testing.T) {
 }
 
 // TestParentDashboardShowsPluginUpdateIcon confirms the Plugins card renders
-// an update-available icon/link next to a plugin's version when the
-// scheduler's PluginReleases cache (see internal/scheduler's
-// checkPluginUpdates) has a newer version cached than what the plugin's
-// manifest last reported (fakePluginServer always reports "1.0.0"), and that
-// the icon is absent when the cached version isn't newer.
+// an update-available icon next to a plugin's version when the scheduler's
+// PluginVersions cache (see internal/scheduler's checkPluginVersions) has an
+// upgrade-available response cached for it (as a plugin's own GET /version
+// would report), and that the icon is absent when nothing's cached or the
+// cached response says no upgrade is available.
 func TestParentDashboardShowsPluginUpdateIcon(t *testing.T) {
 	ts := newTestServer(t)
-	ts.App.PluginReleases = &release.PluginCache{}
+	ts.App.PluginVersions = &plugins.VersionCache{}
 	_ = ts.login(t, "plugin-update-icon@example.com", "s3cret-password")
 
 	plugin := fakePluginServer(t, true, "Bills", "", false)
 	ts.App.BootstrapPlugins(t.Context(), []config.PluginBootstrap{
-		{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: plugin.URL, Enabled: true, RepoURL: "https://github.com/mscreations/billtracker-plugin"},
+		{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: plugin.URL, Enabled: true},
 	})
 
-	ts.App.PluginReleases.Set("bill-tracker", &release.Release{
-		Version: "1.1.0",
-		URL:     "https://github.com/mscreations/billtracker-plugin/releases/tag/v1.1.0",
+	ts.App.PluginVersions.Set("bill-tracker", &plugins.VersionInfo{
+		Version:          "1.0.0",
+		UpgradeAvailable: true,
+		UpgradeVersion:   "1.1.0",
+		Changelog:        "feat: new stuff",
+		Channel:          "release",
 	})
 
 	page, err := ts.Client.Get(ts.URL + "/parent")
@@ -271,15 +274,18 @@ func TestParentDashboardShowsPluginUpdateIcon(t *testing.T) {
 	}
 	html := string(body)
 	if !strings.Contains(html, `class="plugin-update-icon"`) {
-		t.Fatal("expected the dashboard to show a plugin-update-icon for a newer cached version")
+		t.Fatal("expected the dashboard to show a plugin-update-icon when the cached /version response reports an upgrade")
 	}
-	if !strings.Contains(html, "https://github.com/mscreations/billtracker-plugin/releases/tag/v1.1.0") {
-		t.Fatal("expected the update icon to link to the cached release URL")
+	if !strings.Contains(html, "1.1.0") || !strings.Contains(html, "feat: new stuff") {
+		t.Fatal("expected the update icon's tooltip to include the upgrade version and changelog")
+	}
+	if strings.Contains(html, `<a class="plugin-update-icon"`) {
+		t.Fatal("did not expect the update icon to be a link - GET /version carries no URL")
 	}
 
-	// Now cache a version that is NOT newer than the manifest's reported
-	// 1.0.0 - the icon must not appear.
-	ts.App.PluginReleases.Set("bill-tracker", &release.Release{Version: "1.0.0"})
+	// Now cache a response reporting no upgrade available - the icon must
+	// not appear.
+	ts.App.PluginVersions.Set("bill-tracker", &plugins.VersionInfo{Version: "1.0.0", UpgradeAvailable: false})
 	page2, err := ts.Client.Get(ts.URL + "/parent")
 	if err != nil {
 		t.Fatalf("GET /parent (up to date): %v", err)
@@ -290,7 +296,7 @@ func TestParentDashboardShowsPluginUpdateIcon(t *testing.T) {
 		t.Fatalf("reading body: %v", err)
 	}
 	if strings.Contains(string(body2), `class="plugin-update-icon"`) {
-		t.Fatal("did not expect an update icon when the cached version is not newer")
+		t.Fatal("did not expect an update icon when the cached response reports no upgrade available")
 	}
 }
 

@@ -19,8 +19,7 @@
       <td>
         {{if .Version.Valid}}{{.Version.String}}{{else}}<span class="hint">—</span>{{end}}
         {{if .UpdateAvailable}}
-          <a class="plugin-update-icon" href="{{.LatestReleaseURL}}" target="_blank" rel="noopener"
-             title="Update available: v{{.LatestVersion}}">&#8593;</a>
+          <span class="plugin-update-icon" title="Update available: v{{.LatestVersion}}{{if .Changelog}} — {{.Changelog}}{{end}}">&#8593;</span>
         {{end}}
       </td>
       <td>

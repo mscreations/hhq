@@ -131,36 +131,6 @@ func TestFetchLatestTagErrorsWhenNoVersionShapedTagsExist(t *testing.T) {
 	}
 }
 
-func TestRepoAPIURLs(t *testing.T) {
-	cases := []struct {
-		repoWebURL      string
-		wantRelease     string
-		wantTags        string
-	}{
-		{
-			"https://github.com/mscreations/billtracker-plugin",
-			"https://api.github.com/repos/mscreations/billtracker-plugin/releases/latest",
-			"https://api.github.com/repos/mscreations/billtracker-plugin/tags",
-		},
-		{
-			// trailing slash should be trimmed rather than producing a
-			// doubled slash in the derived API URL.
-			"https://github.com/mscreations/billtracker-plugin/",
-			"https://api.github.com/repos/mscreations/billtracker-plugin/releases/latest",
-			"https://api.github.com/repos/mscreations/billtracker-plugin/tags",
-		},
-	}
-	for _, c := range cases {
-		releaseURL, tagsURL := RepoAPIURLs(c.repoWebURL)
-		if releaseURL != c.wantRelease {
-			t.Errorf("RepoAPIURLs(%q) release = %q, want %q", c.repoWebURL, releaseURL, c.wantRelease)
-		}
-		if tagsURL != c.wantTags {
-			t.Errorf("RepoAPIURLs(%q) tags = %q, want %q", c.repoWebURL, tagsURL, c.wantTags)
-		}
-	}
-}
-
 func TestFetchLatestFromRepoParsesTagAndURL(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(githubRelease{
@@ -199,69 +169,6 @@ func TestFetchLatestTagFromRepoParsesHighestDevTag(t *testing.T) {
 	}
 	if rel.URL != "https://github.com/mscreations/billtracker-plugin/tree/v1.4.0-dev" {
 		t.Errorf("URL = %q", rel.URL)
-	}
-}
-
-func TestCheckForUpdateSelectsReleasesEndpointForNonDevVersion(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode(githubRelease{TagName: "v2.1.0", HTMLURL: "https://example.com/v2.1.0"})
-	}))
-	defer srv.Close()
-
-	// RepoAPIURLs only rewrites a "https://github.com/" prefix - a plain
-	// httptest URL is left untouched aside from the appended API suffix, so
-	// this exercises CheckForUpdate's real, non-mocked URL derivation
-	// without needing to hit the real github.com.
-	rel, err := CheckForUpdate(t.Context(), srv.URL, "2.0.0")
-	if err != nil {
-		t.Fatalf("CheckForUpdate: %v", err)
-	}
-	if gotPath != "/releases/latest" {
-		t.Errorf("request path = %q, want /releases/latest", gotPath)
-	}
-	if rel.Version != "2.1.0" {
-		t.Errorf("Version = %q, want %q", rel.Version, "2.1.0")
-	}
-}
-
-func TestCheckForUpdateSelectsTagsEndpointForDevVersion(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		_ = json.NewEncoder(w).Encode([]githubTag{{Name: "v2.1.0-dev"}})
-	}))
-	defer srv.Close()
-
-	rel, err := CheckForUpdate(t.Context(), srv.URL, "2.0.0-dev")
-	if err != nil {
-		t.Fatalf("CheckForUpdate: %v", err)
-	}
-	if gotPath != "/tags" {
-		t.Errorf("request path = %q, want /tags", gotPath)
-	}
-	if rel.Version != "2.1.0-dev" {
-		t.Errorf("Version = %q, want %q", rel.Version, "2.1.0-dev")
-	}
-}
-
-func TestPluginCacheGetSetIsolatedByID(t *testing.T) {
-	c := &PluginCache{}
-	if _, ok := c.Get("billtracker"); ok {
-		t.Fatal("expected nothing cached yet")
-	}
-
-	c.Set("billtracker", &Release{Version: "2.0.0"})
-	c.Set("weather-plugin", &Release{Version: "1.0.0"})
-
-	got, ok := c.Get("billtracker")
-	if !ok || got.Version != "2.0.0" {
-		t.Fatalf("Get(billtracker) = %+v, %v", got, ok)
-	}
-	got, ok = c.Get("weather-plugin")
-	if !ok || got.Version != "1.0.0" {
-		t.Fatalf("Get(weather-plugin) = %+v, %v", got, ok)
 	}
 }
 
