@@ -300,6 +300,54 @@ func TestParentDashboardShowsPluginUpdateIcon(t *testing.T) {
 	}
 }
 
+// TestParentDashboardShowsPluginPreReleaseWarning confirms the Plugins card
+// flags a plugin reporting a "dev" channel (see internal/plugins/version.go's
+// VersionInfo.Channel) only when hhq itself is running a non-dev (production)
+// build - a dev plugin alongside a dev hhq is the expected/normal case during
+// development and shouldn't be flagged.
+func TestParentDashboardShowsPluginPreReleaseWarning(t *testing.T) {
+	ts := newTestServer(t)
+	ts.App.PluginVersions = &plugins.VersionCache{}
+	ts.App.Version = "1.0.0"
+	_ = ts.login(t, "plugin-prerelease@example.com", "s3cret-password")
+
+	plugin := fakePluginServer(t, true, "Bills", "", false)
+	ts.App.BootstrapPlugins(t.Context(), []config.PluginBootstrap{
+		{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: plugin.URL, Enabled: true},
+	})
+
+	ts.App.PluginVersions.Set("bill-tracker", &plugins.VersionInfo{Version: "1.1.0-dev", Channel: "dev"})
+
+	page, err := ts.Client.Get(ts.URL + "/parent")
+	if err != nil {
+		t.Fatalf("GET /parent: %v", err)
+	}
+	defer page.Body.Close()
+	body, err := io.ReadAll(page.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if !strings.Contains(string(body), `class="plugin-prerelease-icon"`) {
+		t.Fatal("expected a pre-release warning icon for a dev-channel plugin running under a production hhq")
+	}
+
+	// A dev-channel plugin running alongside a dev hhq is normal, not a
+	// warning-worthy mismatch.
+	ts.App.Version = "1.0.0-dev"
+	page2, err := ts.Client.Get(ts.URL + "/parent")
+	if err != nil {
+		t.Fatalf("GET /parent (dev hhq): %v", err)
+	}
+	defer page2.Body.Close()
+	body2, err := io.ReadAll(page2.Body)
+	if err != nil {
+		t.Fatalf("reading body: %v", err)
+	}
+	if strings.Contains(string(body2), `class="plugin-prerelease-icon"`) {
+		t.Fatal("did not expect a pre-release warning when hhq itself is a dev build")
+	}
+}
+
 var csrfInputRe = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
 
 // TestPluginSettingsPageSubmitRoundTripsCSRFToken is a regression test: a

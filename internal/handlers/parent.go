@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -313,13 +314,19 @@ type PluginRow struct {
 	UpdateAvailable bool
 	LatestVersion   string
 	Changelog       string
+	// PreRelease is true when this plugin self-reports a "dev" channel (see
+	// internal/plugins/version.go's VersionInfo.Channel) while hhq itself is
+	// running a non-dev (production) build - flags a pre-release plugin that
+	// may have issues, running alongside a stable hhq.
+	PreRelease bool
 }
 
 // buildPluginRows pairs each plugin with the scheduler's cached GET /version
 // result (see scheduler.checkPluginVersions). A plugin with nothing cached
 // yet (e.g. app just started, or the plugin hasn't responded) simply gets
-// UpdateAvailable = false.
+// UpdateAvailable = false and PreRelease = false.
 func (a *App) buildPluginRows(pluginList []models.Plugin) []PluginRow {
+	hhqIsDev := strings.HasSuffix(a.Version, "-dev")
 	rows := make([]PluginRow, len(pluginList))
 	for i, p := range pluginList {
 		rows[i] = PluginRow{Plugin: p}
@@ -327,7 +334,11 @@ func (a *App) buildPluginRows(pluginList []models.Plugin) []PluginRow {
 			continue
 		}
 		info, ok := a.PluginVersions.Get(p.ID)
-		if !ok || !info.UpgradeAvailable {
+		if !ok {
+			continue
+		}
+		rows[i].PreRelease = !hhqIsDev && info.Channel == "dev"
+		if !info.UpgradeAvailable {
 			continue
 		}
 		rows[i].UpdateAvailable = true

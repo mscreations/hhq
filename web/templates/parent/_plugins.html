@@ -21,6 +21,9 @@
         {{if .UpdateAvailable}}
           <span class="plugin-update-icon" title="Update available: v{{.LatestVersion}}{{if .Changelog}} — {{.Changelog}}{{end}}">&#8593;</span>
         {{end}}
+        {{if .PreRelease}}
+          <span class="plugin-prerelease-icon" title="This plugin is running a pre-release (dev) build - issues may exist">&#9888;</span>
+        {{end}}
       </td>
       <td>
         <form method="POST" action="/parent/plugins/{{.ID}}/toggle"

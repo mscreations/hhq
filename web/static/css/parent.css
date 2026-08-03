@@ -7,6 +7,7 @@
   --accent: #3B82F6;
   --green: #22c55e;
   --red: #ef4444;
+  --amber: #f59e0b;
 }
 
 /* Dark mode: toggled by adding data-theme="dark" to <html> (see parent.js).
@@ -21,6 +22,7 @@ html[data-theme="dark"] {
   --accent: #5b9bf6;
   --green: #34d399;
   --red: #f87171;
+  --amber: #fbbf24;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -33,6 +35,7 @@ html[data-theme="dark"] {
     --accent: #5b9bf6;
     --green: #34d399;
     --red: #f87171;
+    --amber: #fbbf24;
   }
 }
 
@@ -146,6 +149,26 @@ body {
   vertical-align: middle;
 }
 .plugin-update-icon:hover { opacity: 0.9; }
+
+/* Warns when a production hhq is running a plugin built from a "-dev"
+   pre-release channel - same compact shape as .plugin-update-icon, amber
+   rather than green since this isn't good news the way an update is. */
+.plugin-prerelease-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  background: var(--amber);
+  color: white !important;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: default;
+}
 
 .card {
   background: var(--card-bg);
