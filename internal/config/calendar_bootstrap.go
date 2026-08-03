@@ -32,7 +32,12 @@ type CalendarAccountBootstrap struct {
 	Provider string `json:"provider"` // "fastmail", "icloud", "generic"/"caldav", or the raw calendar_provider enum values
 	URL      string `json:"url"`
 	Username string `json:"username"`
-	Password string `json:"password"`
+	// UsernameFile is an alternative to Username - a path to a file
+	// containing just the username, for the same reason PasswordFile exists
+	// (keeping calendars.json itself free of anything that needs to live in
+	// a Secret). Mutually exclusive with Username - see ResolveUsername.
+	UsernameFile string `json:"username_file,omitempty"`
+	Password     string `json:"password"`
 	// PasswordFile is an alternative to Password - a path to a file
 	// containing just the password (e.g. a Kubernetes Secret volume mount),
 	// so calendars.json itself can hold no secret material and live in a
@@ -48,15 +53,29 @@ type CalendarAccountBootstrap struct {
 // BootstrapCalendarAccounts, so one bad entry's unreadable file doesn't fail
 // the whole calendars.json.
 func (e CalendarAccountBootstrap) ResolvePassword() (string, error) {
-	if e.Password != "" && e.PasswordFile != "" {
-		return "", fmt.Errorf("password and password_file are mutually exclusive")
+	return resolveBootstrapField("password", e.Password, e.PasswordFile)
+}
+
+// ResolveUsername returns this entry's effective username: Username if set,
+// or the trimmed contents of UsernameFile if that's set instead. Same
+// mutual-exclusion/error behavior as ResolvePassword.
+func (e CalendarAccountBootstrap) ResolveUsername() (string, error) {
+	return resolveBootstrapField("username", e.Username, e.UsernameFile)
+}
+
+// resolveBootstrapField implements the shared value/value_file precedence
+// rule used by ResolvePassword and ResolveUsername. field is the JSON field
+// name (e.g. "password"), used only to make error messages self-explanatory.
+func resolveBootstrapField(field, value, file string) (string, error) {
+	if value != "" && file != "" {
+		return "", fmt.Errorf("%s and %s_file are mutually exclusive", field, field)
 	}
-	if e.PasswordFile == "" {
-		return e.Password, nil
+	if file == "" {
+		return value, nil
 	}
-	data, err := os.ReadFile(e.PasswordFile)
+	data, err := os.ReadFile(file)
 	if err != nil {
-		return "", fmt.Errorf("reading password_file %q: %w", e.PasswordFile, err)
+		return "", fmt.Errorf("reading %s_file %q: %w", field, file, err)
 	}
 	return strings.TrimSpace(string(data)), nil
 }

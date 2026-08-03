@@ -202,8 +202,17 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 	seen := make(map[string]bool, len(entries))
 	for _, e := range entries {
 		seen[e.Name] = true
-		if e.Name == "" || e.Username == "" {
-			logging.Errorf("bootstrap: skipping calendar account %q: name and username are required", e.Name)
+		if e.Name == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: name is required", e.Name)
+			continue
+		}
+		username, err := e.ResolveUsername()
+		if err != nil {
+			logging.Errorf("bootstrap: skipping calendar account %q: %v", e.Name, err)
+			continue
+		}
+		if username == "" {
+			logging.Errorf("bootstrap: skipping calendar account %q: username or username_file is required", e.Name)
 			continue
 		}
 		password, err := e.ResolvePassword()
@@ -238,7 +247,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 				Name:              e.Name,
 				Provider:          provider,
 				CalDAVURL:         nullString(url),
-				Username:          nullString(e.Username),
+				Username:          nullString(username),
 				EncryptedPassword: encrypted,
 				BootstrapManaged:  true,
 			})
@@ -253,7 +262,7 @@ func (a *App) BootstrapCalendarAccounts(ctx context.Context, entries []config.Ca
 		case !existing.BootstrapManaged:
 			logging.Warnf("bootstrap: skipping %q - an account with this name already exists and was created via the dashboard, not bootstrap", e.Name)
 		default:
-			if err := a.CalendarAccounts.UpdateBootstrap(ctx, existing.ID, provider, url, e.Username, encrypted); err != nil {
+			if err := a.CalendarAccounts.UpdateBootstrap(ctx, existing.ID, provider, url, username, encrypted); err != nil {
 				logging.Errorf("bootstrap: updating calendar account %q (id=%d): %v", e.Name, existing.ID, err)
 				continue
 			}

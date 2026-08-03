@@ -170,13 +170,14 @@ on startup by mounting a `calendars.json` file into the directory named by
 ]
 ```
 
-Each entry's password can be given either as `password` (a plain string) or
-as `password_file` (a path to a file containing just the password, e.g. a
-Kubernetes Secret mounted separately from `calendars.json` itself) - setting
-both on the same entry is a startup-time bootstrap error for that entry only
-(the rest of the file still applies). Using `password_file` means
-`calendars.json` holds no secret material, so it can live in a plain
-ConfigMap instead of needing to be a Secret itself.
+Each entry's username and password can be given either as plain strings
+(`username`/`password`) or as `username_file`/`password_file` (a path to a
+file containing just that value, e.g. a Kubernetes Secret mounted separately
+from `calendars.json` itself) - setting both forms for the same field on the
+same entry is a startup-time bootstrap error for that entry only (the rest
+of the file still applies). Using the `_file` variants means `calendars.json`
+holds no secret material, so it can live in a plain ConfigMap instead of
+needing to be a Secret itself.
 
 `provider` accepts `fastmail`, `icloud`, or `generic` (the CalDAV root URL is
 pre-filled for the first two, same as the dashboard form; `generic` requires
