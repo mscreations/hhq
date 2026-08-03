@@ -70,7 +70,7 @@ jobs:
             echo "name=hhq" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       - name: Render chart version and image tag
         run: |
