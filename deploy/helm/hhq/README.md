@@ -9,9 +9,21 @@ whichever deployment method suits your setup. Neither depends on the other.
 
 ## Install
 
+From a local checkout:
+
 ```sh
 helm install hhq deploy/helm/hhq -n hhq --create-namespace -f my-values.yaml
 ```
+
+Or from the published OCI chart (see the top-level README's "Versioning &
+releases" section) - `--version` is required, there's no floating `latest`:
+
+```sh
+helm install hhq oci://ghcr.io/mscreations/charts/hhq --version 1.2.0 \
+  -n hhq --create-namespace -f my-values.yaml
+```
+
+Use `oci://ghcr.io/mscreations/charts/hhq-dev` instead for a dev-channel build.
 
 ## Secrets you must create yourself
 

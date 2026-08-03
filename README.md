@@ -491,6 +491,21 @@ pull request on GitHub; once merged, an Action tags the next minor release
 and a link to check for updates are shown at the bottom of the parent
 dashboard.
 
+Every image publish also publishes the Helm chart (`deploy/helm/hhq/`) to the
+matching OCI channel, at the same version as the image:
+- `oci://ghcr.io/mscreations/charts/hhq` - prod releases (e.g. `1.2.0`)
+- `oci://ghcr.io/mscreations/charts/hhq-dev` - dev builds (e.g. `1.1.4-dev`)
+
+```
+helm install hhq oci://ghcr.io/mscreations/charts/hhq --version 1.2.0
+```
+
+There's no floating `latest` chart version - OCI Helm charts don't support
+floating tags the way Docker images do, so `--version` must always be given
+explicitly. The chart's default `values.yaml` `hhq.image.tag` is set to match
+the chart's own version at publish time, so no `--set image.tag=...` override
+is needed.
+
 ## Development Process
 
 This project was developed with substantial AI assistance (Claude Code).

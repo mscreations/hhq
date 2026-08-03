@@ -2,16 +2,17 @@ name: Version main release
 
 # On a merged dev->main pull request: tags the next minor release (e.g.
 # v1.2.0), cuts a GitHub Release for it (how the parent dashboard's
-# update-checker knows the "latest release"), and calls publish.yml directly
-# to build/publish that release's image. Then opens and auto-merges a PR
-# syncing main back into dev, and - since that merge is also pushed with the
-# default GITHUB_TOKEN and so won't trigger version-dev.yml's own
-# push-to-dev trigger - immediately tags+publishes dev's first build against
-# the newly-promoted line too, rather than leaving dev without a fresh tag
-# until some unrelated future push. Both publish calls go through
-# publish.yml as a reusable workflow rather than its `push: tags:` trigger,
-# for the same GITHUB_TOKEN-doesn't-cascade reason. See version-dev.yml and
-# README.md's versioning section for the overall scheme.
+# update-checker knows the "latest release"), and calls publish.yml and
+# publish-chart.yml directly to build/publish that release's image and Helm
+# chart. Then opens and auto-merges a PR syncing main back into dev, and -
+# since that merge is also pushed with the default GITHUB_TOKEN and so won't
+# trigger version-dev.yml's own push-to-dev trigger - immediately
+# tags+publishes dev's first build against the newly-promoted line too,
+# rather than leaving dev without a fresh tag until some unrelated future
+# push. All publish calls go through publish.yml/publish-chart.yml as
+# reusable workflows rather than their `push: tags:` triggers, for the same
+# GITHUB_TOKEN-doesn't-cascade reason. See version-dev.yml and README.md's
+# versioning section for the overall scheme.
 on:
   pull_request:
     types: [closed]
@@ -91,6 +92,15 @@ jobs:
     with:
       version: ${{ needs.tag-release-and-sync-dev.outputs.tag }}
 
+  publish-chart-release:
+    needs: tag-release-and-sync-dev
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-chart.yml
+    with:
+      version: ${{ needs.tag-release-and-sync-dev.outputs.tag }}
+
   tag-dev-after-sync:
     needs: tag-release-and-sync-dev
     runs-on: ubuntu-latest
@@ -113,5 +123,14 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/publish.yml
+    with:
+      version: ${{ needs.tag-dev-after-sync.outputs.tag }}
+
+  publish-chart-dev:
+    needs: tag-dev-after-sync
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/publish-chart.yml
     with:
       version: ${{ needs.tag-dev-after-sync.outputs.tag }}

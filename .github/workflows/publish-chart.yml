@@ -1,0 +1,90 @@
+name: Publish Helm chart to GHCR
+
+# Packages and pushes deploy/helm/hhq to two OCI channels, mirroring
+# publish.yml's image channels: a "-dev" tag publishes
+# oci://ghcr.io/mscreations/charts/hhq-dev, anything else publishes
+# oci://ghcr.io/mscreations/charts/hhq. Called directly (via
+# `uses: ./.github/workflows/publish-chart.yml`) as a job from
+# version-dev.yml and version-main.yml right after they push a new tag - see
+# publish.yml's own header comment for why this is a workflow_call rather
+# than relying on `push: tags:` for the bot-authored tag pushes those
+# workflows make. The `push: tags:` trigger is kept too, so a manually-pushed
+# version tag still publishes its chart on its own. workflow_dispatch is for
+# manual recovery, e.g. `gh workflow run publish-chart.yml -f version=v1.2.3`.
+#
+# deploy/helm/hhq/Chart.yaml and values.yaml are only ever edited in this
+# runner's ephemeral checkout, never committed back - the committed files'
+# placeholder version/tag ("0.1.0"/"latest") exist purely as local `helm
+# template`/`helm install` dev defaults, the same role the Dockerfile's
+# default ARG VERSION plays before this pipeline overrides it at build time.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag to package and publish, e.g. "v1.2.3" or "v1.2.4-dev"'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      version:
+        description: 'Tag to package and publish, e.g. "v1.2.3" or "v1.2.4-dev" - falls back to the triggering tag ref when omitted (the push: tags: case)'
+        required: false
+        type: string
+
+jobs:
+  publish-chart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Determine version and channel
+        id: vars
+        run: |
+          set -euo pipefail
+          RAW="${{ inputs.version }}"
+          if [ -z "$RAW" ]; then
+            RAW="$GITHUB_REF_NAME"
+          fi
+          VERSION="${RAW#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-dev ]]; then
+            echo "variant=dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "variant=prod" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select chart name for this channel
+        id: chart
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.vars.outputs.variant }}" = "dev" ]; then
+            echo "name=hhq-dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=hhq" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: azure/setup-helm@v4
+
+      - name: Render chart version and image tag
+        run: |
+          set -euo pipefail
+          yq eval ".version = \"${{ steps.vars.outputs.version }}\" | .appVersion = \"${{ steps.vars.outputs.version }}\" | .name = \"${{ steps.chart.outputs.name }}\"" \
+            -i deploy/helm/hhq/Chart.yaml
+          yq eval ".hhq.image.tag = \"${{ steps.vars.outputs.version }}\"" \
+            -i deploy/helm/hhq/values.yaml
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package chart
+        run: helm package deploy/helm/hhq --destination /tmp/chart-out
+
+      - name: Push chart
+        run: helm push "/tmp/chart-out/${{ steps.chart.outputs.name }}-${{ steps.vars.outputs.version }}.tgz" oci://ghcr.io/mscreations/charts
