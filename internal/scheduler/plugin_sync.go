@@ -99,9 +99,11 @@ func (s *Scheduler) runPluginVersionCheck(ctx context.Context) {
 // checkPluginVersions fetches each enabled plugin's GET /version and caches
 // the result in s.PluginVersions for the parent dashboard to read (see
 // internal/handlers/parent.go's buildPluginRows). A plugin that fails to
-// respond (not yet up, network error, etc.) is skipped for this tick,
-// leaving its previously cached value (if any) in place rather than
-// clearing it.
+// respond, or responds but hasn't finished its own first update check yet
+// (Checked=false), gets a bounded round of fast retries (see
+// retryPluginVersionUntilChecked) rather than waiting for the next full
+// ReleaseCheckInterval tick (default 24h) - both cases are commonly just a
+// startup race between hhq and a plugin sidecar container.
 func (s *Scheduler) checkPluginVersions(ctx context.Context) {
 	list, err := s.Plugins.ListAll(ctx)
 	if err != nil {
@@ -116,36 +118,31 @@ func (s *Scheduler) checkPluginVersions(ctx context.Context) {
 		info, err := plugins.FetchVersion(ctx, p.BaseURL)
 		if err != nil {
 			logging.Debugf("scheduler: checking plugin %q version: %v", p.ID, err)
+			go s.retryPluginVersionUntilChecked(ctx, p.ID, p.BaseURL)
 			continue
 		}
 		s.PluginVersions.Set(p.ID, info)
 		logging.Debugf("scheduler: plugin %q reports version %s (upgradeAvailable=%v, checked=%v)", p.ID, info.Version, info.UpgradeAvailable, info.Checked)
 		if !info.Checked {
-			// The plugin hasn't finished its own first update check yet -
-			// commonly a startup race, since hhq's own immediate check can
-			// beat the plugin's background check to the punch. Rather than
-			// trusting this UpgradeAvailable=false until the next full
-			// ReleaseCheckInterval tick (default 24h), keep asking every
-			// few seconds until the plugin reports a real answer.
 			go s.retryPluginVersionUntilChecked(ctx, p.ID, p.BaseURL)
 		}
 	}
 }
 
 // pluginVersionPendingRetryInterval/MaxAttempts bound how long
-// retryPluginVersionUntilChecked keeps polling a plugin that hasn't finished
-// its own first update check yet. A plugin that never sets Checked=true
-// (e.g. an older version predating this field) just stops getting retried
-// after MaxAttempts - the next normal ReleaseCheckInterval tick will try
-// again from scratch.
+// retryPluginVersionUntilChecked keeps polling a plugin that either isn't
+// reachable yet or hasn't finished its own first update check. A plugin
+// that stays unreachable, or never sets Checked=true (e.g. an older version
+// predating this field), just stops getting retried after MaxAttempts - the
+// next normal ReleaseCheckInterval tick will try again from scratch.
 var pluginVersionPendingRetryInterval = 20 * time.Second
 
 const pluginVersionPendingMaxAttempts = 6
 
 // retryPluginVersionUntilChecked re-fetches id's GET /version every
-// pluginVersionPendingRetryInterval until it reports Checked=true or
-// pluginVersionPendingMaxAttempts is reached, caching each result as it
-// goes - see checkPluginVersions.
+// pluginVersionPendingRetryInterval until it succeeds with Checked=true or
+// pluginVersionPendingMaxAttempts is reached, caching each successful result
+// as it goes - see checkPluginVersions.
 func (s *Scheduler) retryPluginVersionUntilChecked(ctx context.Context, id, baseURL string) {
 	ticker := time.NewTicker(pluginVersionPendingRetryInterval)
 	defer ticker.Stop()
