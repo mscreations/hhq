@@ -20,10 +20,136 @@ import (
 	"errors"
 	"time"
 
+	"github.com/mscreations/hhq/internal/auth"
 	"github.com/mscreations/hhq/internal/config"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
 )
+
+// BootstrapParents reconciles the parents.json bootstrap file against the
+// database on every startup, replacing the old one-shot
+// BOOTSTRAP_PARENT_NAME/_EMAIL/_PASSWORD/_AVATAR_FILE env vars. Follows the
+// same by-email reconciliation pattern as BootstrapChildren: parents not yet
+// present (matched by email) are created, and parents already
+// present that were themselves created by bootstrap have their password,
+// color, and display name refreshed to match every time - the config file is
+// the standing source of truth for them, which is also why they're marked
+// BootstrapManaged and refused edits/removal through the parent UI (see
+// SetParentDisplayName/RemoveUser). A collision with a parent created
+// through the dashboard (invite flow) is skipped (logged, not overwritten).
+// Any existing BootstrapManaged parent whose email no longer appears in
+// entries is deactivated - unless doing so would leave zero active parents,
+// which is refused (logged) instead, mirroring RemoveUser's "can't remove
+// the last remaining parent" guard, since there would otherwise be no way
+// to recover login access.
+func (a *App) BootstrapParents(ctx context.Context, entries []config.ParentBootstrap) {
+	seen := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if e.Name == "" {
+			logging.Errorf("bootstrap: skipping parents.json entry: name is required")
+			continue
+		}
+		email, err := e.ResolveEmail()
+		if err != nil {
+			logging.Errorf("bootstrap: skipping parents.json entry %q: %v", e.Name, err)
+			continue
+		}
+		if email == "" {
+			logging.Errorf("bootstrap: skipping parents.json entry %q: email is required", e.Name)
+			continue
+		}
+		password, err := e.ResolvePassword()
+		if err != nil {
+			logging.Errorf("bootstrap: skipping parents.json entry %q: %v", e.Name, err)
+			continue
+		}
+		if password == "" {
+			logging.Errorf("bootstrap: skipping parents.json entry %q: password is required", e.Name)
+			continue
+		}
+		seen[email] = true
+
+		hash, err := auth.HashPassword(password)
+		if err != nil {
+			logging.Errorf("bootstrap: hashing password for parent %q: %v", e.Name, err)
+			continue
+		}
+
+		var parentID int
+		existing, err := a.Users.GetParentByEmail(ctx, email)
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			color := e.Color
+			if color == "" {
+				color, err = a.Users.NextAvailableColor(ctx)
+				if err != nil {
+					logging.Errorf("bootstrap: picking color for parent %q: %v", e.Name, err)
+					continue
+				}
+			} else if resolved, ok := models.ResolveColor(color); ok {
+				color = resolved
+			}
+			id, err := a.Users.CreateParentBootstrap(ctx, e.Name, email, hash, color, e.DisplayName)
+			if err != nil {
+				logging.Errorf("bootstrap: creating parent %q: %v", e.Name, err)
+				continue
+			}
+			logging.Infof("bootstrap: created parent %q (id=%d)", e.Name, id)
+			parentID = id
+		case err != nil:
+			logging.Errorf("bootstrap: looking up parent %q: %v", e.Name, err)
+			continue
+		case !existing.BootstrapManaged:
+			logging.Warnf("bootstrap: skipping %q - a parent with this email already exists and was created via the dashboard, not bootstrap", e.Name)
+			continue
+		default:
+			color := e.Color
+			if color == "" {
+				color = existing.Color // config left color unset: keep whatever it currently is
+			} else if resolved, ok := models.ResolveColor(color); ok {
+				color = resolved
+			}
+			displayName := e.DisplayName
+			if displayName == "" {
+				displayName = existing.DisplayName.String // config left display_name unset: keep whatever it currently is
+			}
+			if err := a.Users.UpdateParentBootstrap(ctx, existing.ID, hash, color, displayName); err != nil {
+				logging.Errorf("bootstrap: updating parent %q (id=%d): %v", e.Name, existing.ID, err)
+				continue
+			}
+			logging.Debugf("bootstrap: refreshed parent %q (id=%d)", e.Name, existing.ID)
+			parentID = existing.ID
+		}
+
+		if e.AvatarFile != "" {
+			if err := a.applyUserAvatarFile(ctx, parentID, e.AvatarFile); err != nil {
+				logging.Errorf("bootstrap: applying avatar_file for parent %q (id=%d): %v", e.Name, parentID, err)
+			}
+		}
+	}
+
+	parents, err := a.Users.ListParents(ctx)
+	if err != nil {
+		logging.Errorf("bootstrap: listing parents for removal reconciliation: %v", err)
+		return
+	}
+	active := len(parents)
+	for _, parent := range parents {
+		if !parent.BootstrapManaged || seen[parent.Email.String] {
+			continue
+		}
+		if active <= 1 {
+			logging.Warnf("bootstrap: refusing to remove last remaining parent %q (id=%d) - no longer in parents.json, but removing them would lock everyone out", parent.Name, parent.ID)
+			continue
+		}
+		if err := a.Users.Deactivate(ctx, parent.ID); err != nil {
+			logging.Errorf("bootstrap: removing parent %q (id=%d) no longer in parents.json: %v", parent.Name, parent.ID, err)
+			continue
+		}
+		active--
+		logging.Infof("bootstrap: removed parent %q (id=%d) - no longer in parents.json", parent.Name, parent.ID)
+	}
+}
 
 // BootstrapChildren reconciles the children.json bootstrap file against the
 // database on every startup, mirroring BootstrapCalendarAccounts's shape

@@ -29,8 +29,8 @@ type setupViewData struct {
 
 // SetupPage shows the first-run "create the initial parent" form, but only
 // while no parent exists yet - once one does (whether created here, via
-// BOOTSTRAP_PARENT_* env vars, or via an accepted invite), this page
-// self-disables by redirecting to /login.
+// parents.json, or via an accepted invite), this page self-disables by
+// redirecting to /login.
 func (a *App) SetupPage(w http.ResponseWriter, r *http.Request) {
 	existing, err := a.Users.ListParents(r.Context())
 	if err != nil {

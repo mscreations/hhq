@@ -1,8 +1,9 @@
-{{- if or .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
+{{- if or .Values.bootstrap.parents .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
 # Non-secret bootstrap files, read by hhq at startup from CONFIG_DIR (see
-# cmd/server/main.go's bootstrapFromFile calls). calendars.json entries
-# should use password_file (a path from bootstrap.extraMounts) rather than a
-# plain password, since this ConfigMap's contents are not encrypted at rest.
+# cmd/server/main.go's bootstrapFromFile calls). parents.json and
+# calendars.json entries should use password_file (a path from
+# bootstrap.extraMounts) rather than a plain password, since this
+# ConfigMap's contents are not encrypted at rest.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,6 +12,9 @@ metadata:
   labels:
     {{- include "hhq.labels" . | nindent 4 }}
 data:
+  {{- if .Values.bootstrap.parents }}
+  parents.json: {{ toJson .Values.bootstrap.parents | quote }}
+  {{- end }}
   {{- if .Values.bootstrap.children }}
   children.json: {{ toJson .Values.bootstrap.children | quote }}
   {{- end }}

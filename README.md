@@ -76,20 +76,18 @@ value).
 
 There are two ways to create the first parent account - use whichever's convenient:
 
-- **`BOOTSTRAP_PARENT_NAME`/`_EMAIL`/`_PASSWORD` env vars**: if set, the app
-  creates that parent automatically on startup, as long as no parent exists
-  yet. Remove those keys afterward (it's a no-op once any parent exists). An
-  optional `BOOTSTRAP_PARENT_AVATAR_FILE` env var (a path to a PNG/JPEG/GIF,
-  same 2 MB/4096x4096px limits as `children.json`'s `avatar_file`, resolved
-  relative to `CONFIG_DIR` unless absolute) sets that parent's avatar at the
-  same time - unlike `avatar_file`, this only applies once, at the moment the
-  initial parent is created, since there's no ongoing bootstrap file for
-  parents to reconcile against on every restart; a photo uploaded later from
-  the dashboard is never overwritten.
-- **The `/setup` page**: if you'd rather not put a password in an env var,
-  leave the bootstrap vars unset and visit `/setup` in a browser instead -
-  it shows a "create the initial account" form, and self-disables (redirects
-  to `/login`) as soon as a parent exists.
+- **`parents.json`**: bootstrap any number of parents (1 or many)
+  automatically on startup by mounting a `parents.json` file into the
+  directory named by `CONFIG_DIR` (default `/config`) - see "Bootstrap
+  config files" below for the full field reference, including
+  `password_file`/`email_file` and `avatar_file`. Unlike the old
+  env-var-based bootstrap, this is reconciled on every startup, not just
+  once: editing `parents.json` and restarting changes the parent's
+  password/color/display name to match.
+- **The `/setup` page**: if you'd rather not put a password in a file, leave
+  `parents.json` unset and visit `/setup` in a browser instead - it shows a
+  "create the initial account" form, and self-disables (redirects to
+  `/login`) as soon as a parent exists.
 
 Every parent added *after* the first is invited by email instead (see the
 "Parents" section of `/parent`): enter their name and email, they get a
@@ -263,18 +261,41 @@ automatically on startup with `children.json`, `chores.json`, and
 ### Bootstrap config files
 
 On every startup, the app scans the directory named by the `CONFIG_DIR` env
-var (default `/config`) for any of five optional JSON files. Each is
+var (default `/config`) for any of six optional JSON files. Each is
 independent - mount any subset of them. Every file is reconciled against the
 database on every startup the same way: an entry not yet present (matched by
-name, or by child+chore for assignments) is created, and an entry that's
-already present *and was itself created by one of these files* is updated to
-match every time. An entry that collides by name with something created
-through the parent dashboard is left alone and logged, since that row's
-config didn't come from this file. Rows created this way show as
-"Administratively managed" on the dashboard and can't be edited or removed
-there - the config file is their source of truth, so change it and restart
-instead.
+name, email for `parents.json`, or by child+chore for assignments) is
+created, and an entry that's already present *and was itself created by one
+of these files* is updated to match every time. An entry that collides by
+name/email with something created through the parent dashboard is left
+alone and logged, since that row's config didn't come from this file. Rows
+created this way show as "Administratively managed" on the dashboard and
+can't be edited or removed there - the config file is their source of
+truth, so change it and restart instead.
 
+- **`parents.json`** - parent (login) accounts. Replaces the old
+  `BOOTSTRAP_PARENT_NAME`/`_EMAIL`/`_PASSWORD`/`_AVATAR_FILE` env vars, e.g.:
+  ```json
+  [
+    {"name": "My Name", "display_name": "Dad", "email": "myemail@mydomain.com", "password": "mypassword", "color": "green", "avatar_file": "avatars/dad.jpg"}
+  ]
+  ```
+  `email`/`password` accept the same `_file` alternative as
+  `calendars.json`'s `username`/`password` (`email_file`/`password_file`
+  - a path to a file holding just that value, so `parents.json` itself never
+  needs to hold a plaintext password when sourced from a separately-mounted
+  Secret). `display_name` and `color` are optional (same auto-assign/leave-
+  unset-alone conventions as `children.json`, described below); `avatar_file`
+  works exactly like `children.json`'s.
+
+  **The password is refreshed from `parents.json` on every restart** for a
+  bootstrap-managed parent, matching how `color` behaves - editing the file
+  and restarting is the only way to change that parent's password (a
+  password reset via the login page's "Forgot password?" flow would just be
+  overwritten on the next restart). The one exception: removing a parent's
+  entry from `parents.json` never deactivates the *last* remaining active
+  parent - that removal is skipped (and logged) instead, so an edit to this
+  file can never lock everyone out of `/parent`.
 - **`calendars.json`** - calendar accounts. See "Add your calendar accounts"
   above for the schema.
 - **`children.json`** - children to create, e.g.:
@@ -423,9 +444,7 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `CALENDAR_SYNC_INTERVAL_MINUTES` | no (default 15) | How often CalDAV/Google accounts are polled |
 | `CALENDAR_WINDOW_DAYS` | no (default 7) | How many days ahead the kiosk calendar shows |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | no | OAuth 2.0 Client credentials from a Google Cloud project with the Calendar API enabled. If either is unset, the "Connect Google Calendar" option is hidden from the parent dashboard - Fastmail/iCloud continue to work without these. |
-| `BOOTSTRAP_PARENT_NAME/EMAIL/PASSWORD` | no (alternative: use the `/setup` page) | Creates the initial parent login on startup |
-| `BOOTSTRAP_PARENT_AVATAR_FILE` | no | Path to a PNG/JPEG/GIF (max 2 MB) applied as the initial parent's avatar, once, when it's created - see "Add your first parent" above |
-| `CONFIG_DIR` | no (default `/config`) | Directory scanned on every startup for the optional bootstrap config files (`calendars.json`, `children.json`, `chores.json`, `assignments.json`, `plugins.json`) - see "Bootstrap config files" above |
+| `CONFIG_DIR` | no (default `/config`) | Directory scanned on every startup for the optional bootstrap config files (`parents.json`, `calendars.json`, `children.json`, `chores.json`, `assignments.json`, `plugins.json`) - see "Bootstrap config files" above |
 | `PLUGIN_SYNC_INTERVAL_MINUTES` | no (default 15) | How often registered plugins are polled for synthetic calendar events (see `plugins.json` above) |
 | `PLUGIN_CONNECTION_SECRET` | no (default `hhq-plugin-connection`) | Shared secret hhq presents to a plugin's `POST /register` (see `PLUGINS.md`'s "Authentication: self-registration") - set the same value on both hhq and the plugin if you want a real, hand-generated secret instead of the shared default |
 | `WEATHER_LOCATION` | no | Free-text place name (e.g. `Chicago, IL`) geocoded to seed the weather widget's location on first startup only - a location already set (by this or the parent dashboard) is never overwritten. Ignored if `WEATHER_LAT`/`WEATHER_LON` are both set. |

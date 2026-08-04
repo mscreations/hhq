@@ -367,6 +367,64 @@ func TestUserStoreCreateChildBootstrapAndUpdate(t *testing.T) {
 	}
 }
 
+func TestUserStoreGetParentByEmailNotFound(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	s := &UserStore{DB: conn}
+
+	if _, err := s.GetParentByEmail(t.Context(), "nobody@example.com"); err != ErrNotFound {
+		t.Fatalf("GetParentByEmail for missing email: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUserStoreGetParentByEmailExcludesChildren(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	s := &UserStore{DB: conn}
+	ctx := t.Context()
+
+	if _, err := s.CreateChild(ctx, "Not A Parent", "#3B82F6"); err != nil {
+		t.Fatalf("CreateChild: %v", err)
+	}
+	// Children have no email column value set, so give it one directly to
+	// prove GetParentByEmail is role-scoped, not just email-scoped.
+	if _, err := conn.ExecContext(ctx, `UPDATE hhq_users SET email = $1 WHERE name = 'Not A Parent'`, "shared@example.com"); err != nil {
+		t.Fatalf("setting child email directly: %v", err)
+	}
+
+	if _, err := s.GetParentByEmail(ctx, "shared@example.com"); err != ErrNotFound {
+		t.Fatalf("GetParentByEmail for a child's email: err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUserStoreCreateParentBootstrapAndUpdate(t *testing.T) {
+	conn := testutil.RequireDB(t)
+	s := &UserStore{DB: conn}
+	ctx := t.Context()
+
+	id, err := s.CreateParentBootstrap(ctx, "Bootstrap Parent", "bootstrap-parent@example.com", "hash1", "#3B82F6", "Dad")
+	if err != nil {
+		t.Fatalf("CreateParentBootstrap: %v", err)
+	}
+
+	got, err := s.GetParentByEmail(ctx, "bootstrap-parent@example.com")
+	if err != nil {
+		t.Fatalf("GetParentByEmail: %v", err)
+	}
+	if got.ID != id || !got.BootstrapManaged || got.Color != "#3B82F6" || got.DisplayName.String != "Dad" || got.PasswordHash.String != "hash1" {
+		t.Fatalf("unexpected parent: %+v", got)
+	}
+
+	if err := s.UpdateParentBootstrap(ctx, id, "hash2", "#EF4444", "Mom"); err != nil {
+		t.Fatalf("UpdateParentBootstrap: %v", err)
+	}
+	updated, err := s.GetByID(ctx, id)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if updated.Color != "#EF4444" || updated.DisplayName.String != "Mom" || updated.PasswordHash.String != "hash2" || updated.Name != "Bootstrap Parent" || !updated.BootstrapManaged {
+		t.Fatalf("UpdateParentBootstrap did not apply as expected: %+v", updated)
+	}
+}
+
 func TestUserStoreSetGetClearAvatar(t *testing.T) {
 	conn := testutil.RequireDB(t)
 	s := &UserStore{DB: conn}

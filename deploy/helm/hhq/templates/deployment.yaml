@@ -89,6 +89,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.bootstrap.parents }}
+            - name: bootstrap
+              mountPath: {{ .Values.bootstrap.configDir }}/parents.json
+              subPath: parents.json
+              readOnly: true
+            {{- end }}
             {{- if .Values.bootstrap.children }}
             - name: bootstrap
               mountPath: {{ .Values.bootstrap.configDir }}/children.json
@@ -249,7 +255,7 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if or .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
+        {{- if or .Values.bootstrap.parents .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
         - name: bootstrap
           configMap:
             name: {{ include "hhq.fullname" . }}-bootstrap

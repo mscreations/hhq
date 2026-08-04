@@ -95,45 +95,6 @@ func templateDict(values ...any) (map[string]any, error) {
 	return d, nil
 }
 
-func bootstrapFirstParent(ctx context.Context, users *models.UserStore) error {
-	existing, err := users.ListParents(ctx)
-	if err != nil {
-		return err
-	}
-	if len(existing) > 0 {
-		logging.Debugf("bootstrap: %d parent user(s) already exist, skipping", len(existing))
-		return nil
-	}
-
-	emailAddr := config.Getenv("BOOTSTRAP_PARENT_EMAIL")
-	password := config.Getenv("BOOTSTRAP_PARENT_PASSWORD") // use the file-based secret if present
-	if emailAddr == "" || password == "" {
-		logging.Warnf("bootstrap: no parent users exist yet, and BOOTSTRAP_PARENT_EMAIL/BOOTSTRAP_PARENT_PASSWORD are not set - you won't be able to log in. Set those env vars and restart, or insert a parent row directly.")
-		return nil
-	}
-	name := config.Getenv("BOOTSTRAP_PARENT_NAME")
-	if name == "" {
-		name = "Parent"
-	}
-
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return err
-	}
-	id, err := users.CreateParent(ctx, name, emailAddr, hash)
-	if err != nil {
-		return err
-	}
-	logging.Infof("bootstrap: created initial parent account %q - remove BOOTSTRAP_PARENT_* env vars after confirming login works", emailAddr)
-
-	if avatarFile := config.Getenv("BOOTSTRAP_PARENT_AVATAR_FILE"); avatarFile != "" {
-		if err := handlers.ApplyUserAvatarFile(ctx, users, id, avatarFile); err != nil {
-			logging.Errorf("bootstrap: applying BOOTSTRAP_PARENT_AVATAR_FILE for initial parent %q: %v", emailAddr, err)
-		}
-	}
-	return nil
-}
-
 // bootstrapFromFile reads and parses a bootstrap config file (if present) and hands the
 // resulting entries to apply. Reading errors, parse errors, and an empty/missing file are
 // all logged and treated as a no-op rather than a fatal startup error. ctx is the app's
@@ -319,22 +280,25 @@ func main() {
 	app.CSRF = auth.NewCSRFManager(sessionSecret)
 	app.LoginLimiter = auth.NewLoginLimiter(10, 15*time.Minute) // 10 failed attempts per key (per-IP and per-email) per 15 minutes
 
-	if err := bootstrapFirstParent(context.Background(), app.Users); err != nil {
-		logging.Errorf("bootstrap: %v", err)
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	configDir := config.ConfigDir()
-	logging.Debugf("scanning %s for bootstrap config files (calendars.json, children.json, chores.json, assignments.json, plugins.json)", configDir)
+	logging.Debugf("scanning %s for bootstrap config files (parents.json, calendars.json, children.json, chores.json, assignments.json, plugins.json)", configDir)
 
+	bootstrapFromFile(ctx, configDir, "parents.json", "parent(s)", config.ParseParentsBootstrap, app.BootstrapParents)
 	bootstrapFromFile(ctx, configDir, "calendars.json", "calendar account(s)", config.ParseCalendarAccountsBootstrap, app.BootstrapCalendarAccounts)
 	bootstrapFromFile(ctx, configDir, "children.json", "child(ren)", config.ParseChildrenBootstrap, app.BootstrapChildren)
 	bootstrapFromFile(ctx, configDir, "chores.json", "chore(s)", config.ParseChoresBootstrap, app.BootstrapChores)
 	bootstrapFromFile(ctx, configDir, "assignments.json", "assignment(s)", config.ParseAssignmentsBootstrap, app.BootstrapAssignments)
 	bootstrapFromFile(ctx, configDir, "plugins.json", "plugin(s)", config.ParsePluginsBootstrap, app.BootstrapPlugins)
 	app.SchedulePluginCalendarCleanup(ctx)
+
+	if parents, err := app.Users.ListParents(ctx); err != nil {
+		logging.Errorf("bootstrap: checking for existing parent users: %v", err)
+	} else if len(parents) == 0 {
+		logging.Warnf("bootstrap: no parent users exist - add one to parents.json and restart, or insert a row directly, or you won't be able to log in.")
+	}
 
 	if location, latStr, lonStr, units := config.Getenv("WEATHER_LOCATION"), config.Getenv("WEATHER_LAT"), config.Getenv("WEATHER_LON"), config.Getenv("WEATHER_UNITS"); location != "" || (latStr != "" && lonStr != "") {
 		var lat, lon float64

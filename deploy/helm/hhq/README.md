@@ -34,32 +34,35 @@ field/key reference each one needs):
 
 | values.yaml key                        | Default name        | Required keys                                            |
 |-----------------------------------------|----------------------|-----------------------------------------------------------|
-| `hhq.existingSecrets.app`               | `hhq-app-secrets`    | `ENCRYPTION_KEY` (required); `BOOTSTRAP_PARENT_*` (optional, first-run only) |
+| `hhq.existingSecrets.app`               | `hhq-app-secrets`    | `ENCRYPTION_KEY` (required) - the initial parent account(s) come from `bootstrap.parents` instead of a key here |
 | `hhq.existingSecrets.smtp`              | `hhq-smtp`           | `SMTP_HOST`, `SMTP_USER`, `SMTP_PASSWORD`                  |
 | `hhq.existingSecrets.db`                | `myapp-postgres-app` | `host`, `port`, `dbname`, `user`, `password` (CNPG shape)  |
-| `bootstrap.extraMounts[].secretName`    | (unset)              | One key per file referenced by a `calendars[].password_file` (see below) |
+| `bootstrap.extraMounts[].secretName`    | (unset)              | One key per file referenced by a `parents[].password_file` or `calendars[].password_file` (see below) |
 | `plugins[].existingSecret.app`          | (unset)              | Plugin-specific, e.g. `ENCRYPTION_KEY` for billtracker-plugin |
 | `plugins[].existingSecret.db`           | (unset)              | Only needed if that plugin's `useHhqDbSecret: false` - `host`, `port`, `dbname`, `user`, `password` (CNPG shape) |
 
 ## Bootstrap config files
 
-hhq reads `children.json` / `chores.json` / `assignments.json` /
-`calendars.json` / `plugins.json` from `CONFIG_DIR` (default `/config`) on
-every startup - see this repo's top-level `CLAUDE.md` for the full field
-reference. This chart sources them as follows:
+hhq reads `parents.json` / `children.json` / `chores.json` /
+`assignments.json` / `calendars.json` / `plugins.json` from `CONFIG_DIR`
+(default `/config`) on every startup - see this repo's top-level
+`CLAUDE.md` for the full field reference. This chart sources them as
+follows:
 
-- `bootstrap.children` / `bootstrap.chores` / `bootstrap.assignments` /
-  `bootstrap.calendars` - plain YAML lists in `values.yaml`, rendered into a
-  ConfigMap. This is safe even for `calendars`, since each entry's password
-  should be given as `password_file` (a path into a Secret mounted via
-  `bootstrap.extraMounts`, see below) rather than a plain `password` field -
-  the same `password`/`password_file` convention billtracker-plugin's
-  `bills.json` uses. Setting both on the same entry is a startup-time
-  bootstrap error.
+- `bootstrap.parents` / `bootstrap.children` / `bootstrap.chores` /
+  `bootstrap.assignments` / `bootstrap.calendars` - plain YAML lists in
+  `values.yaml`, rendered into a ConfigMap. This is safe even for `parents`
+  and `calendars`, since each entry's password (and `parents`' username)
+  should be given as `password_file`/`email_file` (a path into a Secret
+  mounted via `bootstrap.extraMounts`, see below) rather than a plain
+  `password`/`email` field - the same convention billtracker-plugin's
+  `bills.json` uses. Setting both the plain and `_file` form on the same
+  entry/field is a startup-time bootstrap error.
 - `bootstrap.extraMounts` - mounts one or more existing Secrets (created
   outside this chart, never templated here) into the hhq container, for the
-  password files `bootstrap.calendars[].password_file` points at. Same
-  shape as a plugin's `extraMounts` (see below).
+  password/username files `bootstrap.parents[].password_file` and
+  `bootstrap.calendars[].password_file` point at. Same shape as a plugin's
+  `extraMounts` (see below).
 - `plugins.json` is generated automatically from `.Values.plugins` - you
   never write it by hand.
 

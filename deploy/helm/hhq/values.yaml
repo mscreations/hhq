@@ -26,30 +26,26 @@ hhq:
 
   # Non-secret env vars, rendered into a ConfigMap and envFrom'd. Add any
   # other optional env var from internal/config/config.go here as needed.
-  config:
-    LOG_LEVEL: "info"
-    LOG_FORMAT: "text" # set to "json" for one JSON object per log line (e.g. for Loki/log-aggregator ingestion)
-    DB_SSLMODE: "disable"
-    CALENDAR_SYNC_INTERVAL_MINUTES: "15"
-    CALENDAR_WINDOW_DAYS: "7"
-    SMTP_PORT: "587"
-    SMTP_USE_TLS: "false"
-    SMTP_STARTTLS: "true"
-    SMTP_FROM: "hhq@example.com"
-    PUBLIC_BASE_URL: "https://hhq.example.com"
+  config: {}
+  #   LOG_LEVEL: "info"
+  #   LOG_FORMAT: "text" # set to "json" for one JSON object per log line (e.g. for Loki/log-aggregator ingestion)
+  #   DB_SSLMODE: "disable"
+  #   CALENDAR_SYNC_INTERVAL_MINUTES: "15"
+  #   CALENDAR_WINDOW_DAYS: "7"
+  #   SMTP_PORT: "587"
+  #   SMTP_USE_TLS: "false"
+  #   SMTP_STARTTLS: "true"
+  #   SMTP_FROM: "hhq@example.com"
+  #   PUBLIC_BASE_URL: "https://hhq.example.com"
 
   # Names of Secrets that must already exist in the release namespace. This
   # chart never templates a Secret containing real credentials - create
   # these yourself (kubectl create secret generic ..., Sealed Secrets,
   # External Secrets, SOPS, etc).
   existingSecrets:
-    # Keys expected: ENCRYPTION_KEY (required), and optionally
-    # BOOTSTRAP_PARENT_NAME / BOOTSTRAP_PARENT_EMAIL / BOOTSTRAP_PARENT_PASSWORD
-    # (only used on first startup, before any parent user exists).
-    # BOOTSTRAP_PARENT_AVATAR_FILE can also be set here (a path, not secret
-    # data itself) to give that first parent an avatar - point it at a file
-    # mounted via bootstrap.extraMounts below, the same way a calendars.json
-    # entry's password_file works.
+    # Keys expected: ENCRYPTION_KEY (required). The initial parent
+    # account(s) come from bootstrap.parents below (or the /setup page),
+    # not from a key in this secret.
     app: hhq-app-secrets
     # Keys expected: SMTP_HOST, SMTP_USER, SMTP_PASSWORD.
     smtp: hhq-smtp
@@ -74,6 +70,21 @@ hhq:
 # ends up in a ConfigMap in plaintext.
 bootstrap:
   configDir: /config
+
+  # List of {name, display_name, email | email_file, password | password_file, color,
+  # avatar_file} - see internal/config's ParentBootstrap. Replaces the old
+  # BOOTSTRAP_PARENT_* env vars: without at least one entry here (or a parent
+  # created manually via the /setup page), you won't be able to log in.
+  # Prefer password_file (a path to a file mounted from an existing Secret
+  # via extraMounts below) over password, same rationale as calendars below.
+  parents: []
+  # e.g.
+  # parents:
+  #   - name: My Name
+  #     display_name: Dad
+  #     email: myemail@mydomain.com
+  #     password_file: /secrets/parents/my-password
+  #     color: green
 
   # List of {name, color} - see internal/config's ChildBootstrap.
   children: []
@@ -146,11 +157,11 @@ bootstrap:
   #       - key: dad-icloud-password
   #         path: dad-icloud-password
   #     readOnly: true   # default true
-  #   # Avatar images (for children.json's avatar_file or
-  #   # BOOTSTRAP_PARENT_AVATAR_FILE above) work the same way - they're not
-  #   # secret, but Secrets are the only volume source extraMounts supports
-  #   # today, and `kubectl create secret generic hhq-avatars --from-file=...`
-  #   # handles the binary-to-base64 encoding for you.
+  #   # Avatar images (for children.json's or bootstrap.parents' avatar_file)
+  #   # work the same way - they're not secret, but Secrets are the only
+  #   # volume source extraMounts supports today, and
+  #   # `kubectl create secret generic hhq-avatars --from-file=...` handles
+  #   # the binary-to-base64 encoding for you.
   #   - name: avatars
   #     secretName: hhq-avatars
   #     mountPath: /secrets/avatars

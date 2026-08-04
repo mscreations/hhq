@@ -145,6 +145,22 @@ func (s *UserStore) GetByEmail(ctx context.Context, email string) (*User, error)
 	return u, err
 }
 
+// GetParentByEmail looks up a parent by email (role-scoped, unlike the
+// generic GetByEmail), used by the parents.json bootstrap reconciliation
+// (see internal/handlers/bootstrap_config.go) to decide whether a config
+// entry needs to create a new row or update an existing one. Returns
+// ErrNotFound if no parent has that email.
+func (s *UserStore) GetParentByEmail(ctx context.Context, email string) (*User, error) {
+	row := s.DB.QueryRowContext(ctx, `
+		SELECT id, name, role, color, email, password_hash, display_name, auth_provider, external_subject, is_active, created_at, invited_at, bootstrap_managed, (avatar_image IS NOT NULL) AS has_avatar, avatar_updated_at
+		FROM hhq_users WHERE role = 'parent' AND email = $1`, email)
+	u, err := scanUser(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return u, err
+}
+
 func (s *UserStore) CreateChild(ctx context.Context, name, color string) (int, error) {
 	var id int
 	err := s.DB.QueryRowContext(ctx, `
@@ -255,6 +271,30 @@ func (s *UserStore) CreateParent(ctx context.Context, name, email, passwordHash 
 		INSERT INTO hhq_users (name, role, email, password_hash, auth_provider) VALUES ($1, 'parent', $2, $3, 'local') RETURNING id`,
 		name, email, passwordHash).Scan(&id)
 	return id, err
+}
+
+// CreateParentBootstrap creates a parent row marked bootstrap_managed, used
+// by the parents.json bootstrap reconciliation. displayName may be blank
+// (stored as NULL, same as SetDisplayName's clearing convention).
+func (s *UserStore) CreateParentBootstrap(ctx context.Context, name, email, passwordHash, color, displayName string) (int, error) {
+	var id int
+	err := s.DB.QueryRowContext(ctx, `
+		INSERT INTO hhq_users (name, role, email, password_hash, auth_provider, color, display_name, bootstrap_managed)
+		VALUES ($1, 'parent', $2, $3, 'local', $4, $5, TRUE) RETURNING id`,
+		name, email, passwordHash, color, nullableString(displayName)).Scan(&id)
+	return id, err
+}
+
+// UpdateParentBootstrap refreshes a bootstrap-managed parent's password,
+// color, and display name to match parents.json on every startup (email is
+// the reconciliation key, so it never changes here; name isn't refreshed
+// either, matching UpdateChildBootstrap's "identity fields are stable,
+// mutable attributes are reconciled" split).
+func (s *UserStore) UpdateParentBootstrap(ctx context.Context, id int, passwordHash, color, displayName string) error {
+	_, err := s.DB.ExecContext(ctx, `
+		UPDATE hhq_users SET password_hash = $1, color = $2, display_name = $3 WHERE id = $4 AND role = 'parent'`,
+		passwordHash, color, nullableString(displayName), id)
+	return err
 }
 
 // InviteParent creates a parent row with no password set yet (password_hash

@@ -792,6 +792,19 @@ func (a *App) SetParentDisplayName(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+	user, err := a.Users.GetByID(r.Context(), id)
+	if err == models.ErrNotFound {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if user.BootstrapManaged {
+		http.Error(w, "this parent is managed by parents.json config and can't be edited here", http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
@@ -859,7 +872,11 @@ func (a *App) RemoveUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if user.BootstrapManaged {
-		http.Error(w, "this child is managed by children.json config and can't be removed here", http.StatusForbidden)
+		if user.Role == models.RoleParent {
+			http.Error(w, "this parent is managed by parents.json config and can't be removed here", http.StatusForbidden)
+		} else {
+			http.Error(w, "this child is managed by children.json config and can't be removed here", http.StatusForbidden)
+		}
 		return
 	}
 

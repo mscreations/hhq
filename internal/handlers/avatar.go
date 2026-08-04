@@ -50,7 +50,7 @@ const maxAvatarDimension = 4096
 
 // validateAvatarBytes is the single validation path shared by the
 // interactive upload handler (UploadUserAvatar) and every avatar_file
-// reconciliation (BootstrapChildren, bootstrapFirstParent), so all of them
+// reconciliation (BootstrapChildren, BootstrapParents), so all of them
 // can never accept different sets of images. Callers are responsible for
 // enforcing maxAvatarBytes on the raw size before calling this. Returns the
 // sniffed content type on success.
@@ -198,11 +198,11 @@ func (a *App) RemoveUserAvatar(w http.ResponseWriter, r *http.Request) {
 	a.respondAfterMutation(w, r, successFragment)
 }
 
-// applyUserAvatarFile is BootstrapChildren's counterpart to
-// UploadUserAvatar for a children.json entry's avatar_file field. It's also
-// reused directly (as ApplyUserAvatarFile) by bootstrapFirstParent in
-// cmd/server/main.go for BOOTSTRAP_PARENT_AVATAR_FILE, since that bootstrap
-// path only has a *models.UserStore in hand, not a full *App.
+// applyUserAvatarFile is BootstrapChildren's (and BootstrapParents')
+// counterpart to UploadUserAvatar for a children.json/parents.json entry's
+// avatar_file field. ApplyUserAvatarFile is also exported as a standalone
+// function for callers that only have a *models.UserStore in hand, not a
+// full *App.
 func (a *App) applyUserAvatarFile(ctx context.Context, userID int, avatarFile string) error {
 	return ApplyUserAvatarFile(ctx, a.Users, userID, avatarFile)
 }

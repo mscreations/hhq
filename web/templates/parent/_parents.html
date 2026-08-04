@@ -11,6 +11,9 @@
       </td>
       <td>{{.Name}}</td>
       <td>
+        {{if .BootstrapManaged}}
+        {{.DisplayName.String}}
+        {{else}}
         <form method="POST" action="/parent/users/{{.ID}}/display-name" class="inline-form" style="display:inline"
               hx-post="/parent/users/{{.ID}}/display-name" hx-target="#parents-card" hx-swap="outerHTML">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -18,6 +21,7 @@
           <button type="submit" class="btn-secondary">Save</button>
           {{if eq .ID $.DisplayNameSavedID}}<span class="saved-badge">Saved ✓</span>{{end}}
         </form>
+        {{end}}
       </td>
       <td>{{.Email.String}}</td>
       <td>
@@ -28,6 +32,9 @@
         {{end}}
       </td>
       <td>
+        {{if .BootstrapManaged}}
+        <span class="hint" title="Managed by parents.json config">Administratively managed</span>
+        {{else}}
         {{if not .PasswordHash.Valid}}
         <form method="POST" action="/parent/users/{{.ID}}/resend-invite" style="display:inline"
               hx-post="/parent/users/{{.ID}}/resend-invite" hx-target="#parents-card" hx-swap="outerHTML">
@@ -41,6 +48,7 @@
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button type="submit" class="btn-reject">Remove</button>
         </form>
+        {{end}}
       </td>
     </tr>
     {{end}}
