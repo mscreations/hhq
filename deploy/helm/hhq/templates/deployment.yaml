@@ -1,3 +1,6 @@
+{{- if and .Values.bootstrap.external (or .Values.bootstrap.parents .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars) }}
+{{- fail "bootstrap.external is mutually exclusive with bootstrap.parents/children/chores/assignments/calendars - set one or the other, not both" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -89,6 +92,11 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.bootstrap.external }}
+            - name: bootstrap-external
+              mountPath: {{ .Values.bootstrap.configDir }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.bootstrap.parents }}
             - name: bootstrap
               mountPath: {{ .Values.bootstrap.configDir }}/parents.json
@@ -119,7 +127,7 @@ spec:
               subPath: calendars.json
               readOnly: true
             {{- end }}
-            {{- range .Values.bootstrap.extraMounts }}
+            {{- range .Values.hhq.extraMounts }}
             - name: hhq-extra-{{ .name }}
               mountPath: {{ .mountPath }}
               {{- if .subPath }}
@@ -255,12 +263,16 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.bootstrap.external }}
+        - name: bootstrap-external
+          {{- toYaml .Values.bootstrap.external | nindent 10 }}
+        {{- end }}
         {{- if or .Values.bootstrap.parents .Values.bootstrap.children .Values.bootstrap.chores .Values.bootstrap.assignments .Values.bootstrap.calendars }}
         - name: bootstrap
           configMap:
             name: {{ include "hhq.fullname" . }}-bootstrap
         {{- end }}
-        {{- range .Values.bootstrap.extraMounts }}
+        {{- range .Values.hhq.extraMounts }}
         - name: hhq-extra-{{ .name }}
           secret:
             secretName: {{ .secretName }}
