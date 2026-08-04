@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/mscreations/hhq/internal/models"
 	"github.com/mscreations/hhq/internal/plugins"
@@ -48,6 +50,7 @@ func TestCheckPluginVersionsCachesUpgradeAvailableResponse(t *testing.T) {
 		UpgradeVersion:   "1.0.2",
 		Changelog:        "feat: Update versioning",
 		Channel:          "dev",
+		Checked:          true,
 	})
 
 	pluginStore := &models.PluginStore{DB: conn}
@@ -83,6 +86,50 @@ func TestCheckPluginVersionsSkipsDisabledPlugins(t *testing.T) {
 
 	if _, ok := s.PluginVersions.Get("bill-tracker"); ok {
 		t.Fatal("expected a disabled plugin to never be checked")
+	}
+}
+
+func TestCheckPluginVersionsRetriesUntilPluginReportsChecked(t *testing.T) {
+	origInterval := pluginVersionPendingRetryInterval
+	pluginVersionPendingRetryInterval = 10 * time.Millisecond
+	t.Cleanup(func() { pluginVersionPendingRetryInterval = origInterval })
+
+	conn := testutil.RequireDB(t)
+	ctx := t.Context()
+
+	var requestCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if n < 3 {
+			_ = json.NewEncoder(w).Encode(plugins.VersionInfo{Version: "1.0.0", Checked: false})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(plugins.VersionInfo{Version: "1.0.0", UpgradeAvailable: true, UpgradeVersion: "1.0.2", Checked: true})
+	}))
+	t.Cleanup(srv.Close)
+
+	pluginStore := &models.PluginStore{DB: conn}
+	if err := pluginStore.Create(ctx, models.Plugin{ID: "bill-tracker", Name: "Bill Tracker", BaseURL: srv.URL, Enabled: true, BootstrapManaged: true}); err != nil {
+		t.Fatalf("Plugins.Create: %v", err)
+	}
+
+	s := &Scheduler{Plugins: pluginStore, PluginVersions: &plugins.VersionCache{}}
+	s.checkPluginVersions(ctx)
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if got, ok := s.PluginVersions.Get("bill-tracker"); ok && got.Checked {
+			if !got.UpgradeAvailable || got.UpgradeVersion != "1.0.2" {
+				t.Fatalf("got %+v", got)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for the retry loop to observe Checked=true")
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }
 

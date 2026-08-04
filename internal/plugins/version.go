@@ -39,6 +39,12 @@ type VersionInfo struct {
 	UpgradeVersion   string `json:"upgradeVersion"`
 	Changelog        string `json:"changelog"`
 	Channel          string `json:"channel"`
+	// Checked is false when the plugin hasn't finished its own first
+	// background update check yet (e.g. it just started up alongside hhq) -
+	// UpgradeAvailable is meaningless until this is true. See
+	// scheduler.checkPluginVersions, which retries soon rather than waiting
+	// for the full poll interval when it sees Checked=false.
+	Checked bool `json:"checked"`
 }
 
 // FetchVersion calls GET {baseURL}/version, unauthenticated - matching
