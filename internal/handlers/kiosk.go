@@ -80,7 +80,7 @@ type kioskIndexData struct {
 // settings, and kiosk devices already reload periodically in practice.
 func (a *App) KioskIndex(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	layout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutClassic)
+	layout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutWeekly)
 	if err != nil {
 		http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
 		return

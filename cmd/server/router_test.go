@@ -480,8 +480,9 @@ func TestKioskFragmentWeekRendersWithoutAuth(t *testing.T) {
 }
 
 // TestKioskIndexSeedsHomeViewWhenLayoutSettingUnset confirms the default
-// (unset kiosk_layout setting) keeps the classic 3-column view as "Home" -
-// the unchanged, backward-compatible behavior.
+// (unset kiosk_layout setting) uses the 5-day calendar/week view as "Home" -
+// the classic 3-column view remains reachable via the "Agenda" alternate nav
+// button.
 func TestKioskIndexSeedsHomeViewWhenLayoutSettingUnset(t *testing.T) {
 	ts := newTestServer(t)
 
@@ -494,11 +495,11 @@ func TestKioskIndexSeedsHomeViewWhenLayoutSettingUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read body: %v", err)
 	}
-	if !strings.Contains(string(body), "kiosk-grid") {
-		t.Errorf("expected the classic 3-column grid markup when kiosk_layout is unset, got: %s", body)
+	if !strings.Contains(string(body), "kiosk-week") {
+		t.Errorf("expected the 5-day week grid markup when kiosk_layout is unset, got: %s", body)
 	}
-	if !strings.Contains(string(body), `data-nav="calendars"`) {
-		t.Errorf("expected a 'Calendars' alternate nav button when classic is the default, got: %s", body)
+	if !strings.Contains(string(body), `data-nav="agenda"`) {
+		t.Errorf("expected an 'Agenda' alternate nav button when weekly is the default, got: %s", body)
 	}
 }
 

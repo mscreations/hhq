@@ -187,7 +187,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 	if err != nil {
 		return nil, err
 	}
-	kioskLayout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutClassic)
+	kioskLayout, err := a.Settings.Get(ctx, settingKioskLayout, kioskLayoutWeekly)
 	if err != nil {
 		return nil, err
 	}
