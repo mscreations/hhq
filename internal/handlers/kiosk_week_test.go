@@ -157,6 +157,182 @@ func TestPositionEventsOnGridMinimumHeightForZeroDurationEvents(t *testing.T) {
 	}
 }
 
+func TestPositionEventsOnGridSingleEventUsesFullWidth(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	if got[0].LeftPct != weekEventTrackLeftPct || got[0].WidthPct != weekEventTrackWidthPct {
+		t.Errorf("single non-overlapping event: LeftPct/WidthPct = %v/%v, want %v/%v",
+			got[0].LeftPct, got[0].WidthPct, weekEventTrackLeftPct, weekEventTrackWidthPct)
+	}
+}
+
+func TestPositionEventsOnGridOverlappingEventsSplitColumns(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{Summary: "Band Camp", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{Summary: "Empowered Relief", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	if len(got) != 2 {
+		t.Fatalf("got %d events, want 2", len(got))
+	}
+	wantWidth := weekEventTrackWidthPct/2 - weekEventColumnGutter/2
+	for i, e := range got {
+		if diff := e.WidthPct - wantWidth; diff > 0.01 || diff < -0.01 {
+			t.Errorf("event %d WidthPct = %v, want %v", i, e.WidthPct, wantWidth)
+		}
+	}
+	if got[0].LeftPct == got[1].LeftPct {
+		t.Errorf("overlapping events should not share the same LeftPct, both got %v", got[0].LeftPct)
+	}
+	if got[0].LeftPct != weekEventTrackLeftPct {
+		t.Errorf("first event LeftPct = %v, want %v (left margin)", got[0].LeftPct, weekEventTrackLeftPct)
+	}
+}
+
+func TestPositionEventsOnGridThreeWayOverlapUsesThreeColumns(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	seen := map[float64]bool{}
+	for _, e := range got {
+		seen[e.LeftPct] = true
+		wantWidth := weekEventTrackWidthPct/3 - weekEventColumnGutter*2/3
+		if diff := e.WidthPct - wantWidth; diff > 0.01 || diff < -0.01 {
+			t.Errorf("WidthPct = %v, want %v", e.WidthPct, wantWidth)
+		}
+	}
+	if len(seen) != 3 {
+		t.Errorf("got %d distinct LeftPct values, want 3", len(seen))
+	}
+}
+
+func TestPositionEventsOnGridBackToBackEventsDoNotSplitColumns(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{StartsAt: day.Add(10 * time.Hour), EndsAt: day.Add(11 * time.Hour)}, // starts exactly when the first ends
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	for i, e := range got {
+		if e.WidthPct != weekEventTrackWidthPct || e.LeftPct != weekEventTrackLeftPct {
+			t.Errorf("back-to-back event %d = %+v, want full-width single column", i, e)
+		}
+	}
+}
+
+func TestPositionEventsOnGridUnrelatedClustersLayoutIndependently(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)},
+		{StartsAt: day.Add(15 * time.Hour), EndsAt: day.Add(16 * time.Hour)}, // unrelated, later, non-overlapping
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	afternoon := got[2]
+	if afternoon.WidthPct != weekEventTrackWidthPct || afternoon.LeftPct != weekEventTrackLeftPct {
+		t.Errorf("unrelated later event = %+v, want full-width single column despite earlier 2-way overlap", afternoon)
+	}
+}
+
+// TestPositionEventsOnGridThreeWayMutualOverlapCannotExpand is a direct
+// regression test for the reported "Band Camp / Empowered Relief / Jamie
+// work" screenshot: all three events genuinely overlap each other's time
+// range at some point, so none of them should expand past its own column -
+// each is stuck at a bare 1/3 width, which is the correct outcome here (see
+// the sibling test below for a case where expansion actually applies).
+func TestPositionEventsOnGridThreeWayMutualOverlapCannotExpand(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{Summary: "Band Camp", StartsAt: day.Add(8 * time.Hour), EndsAt: day.Add(15 * time.Hour)},       // 8am-3pm, col 0
+		{Summary: "Empowered Relief", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(10 * time.Hour)}, // 9am-10am, col 1 (overlaps Band Camp only)
+		{Summary: "Jamie work", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(17 * time.Hour)},       // 9am-5pm, overlaps both - forced into col 2
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	bandCamp, empoweredRelief, jamieWork := got[0], got[1], got[2]
+	unitWidth := weekEventTrackWidthPct/3 - weekEventColumnGutter*2/3
+	rightEdge := weekEventTrackLeftPct + weekEventTrackWidthPct
+
+	// Jamie work is in the last (3rd) column with nothing further right -
+	// it should reach the track's right edge, same as before this change.
+	if diff := (jamieWork.LeftPct + jamieWork.WidthPct) - rightEdge; diff > 0.01 || diff < -0.01 {
+		t.Errorf("Jamie work should extend to the track's right edge (%v), got left+width = %v", rightEdge, jamieWork.LeftPct+jamieWork.WidthPct)
+	}
+
+	// Empowered Relief cannot expand right - Jamie work occupies column 2
+	// for the entirety of Empowered Relief's 9-10am span.
+	if diff := empoweredRelief.WidthPct - unitWidth; diff > 0.01 || diff < -0.01 {
+		t.Errorf("Empowered Relief WidthPct = %v, want single-column width %v (blocked by Jamie work)", empoweredRelief.WidthPct, unitWidth)
+	}
+
+	// Band Camp cannot expand right either - both later columns are
+	// occupied by something overlapping part of its 8am-3pm span.
+	if diff := bandCamp.WidthPct - unitWidth; diff > 0.01 || diff < -0.01 {
+		t.Errorf("Band Camp WidthPct = %v, want single-column width %v (blocked by Empowered Relief/Jamie work)", bandCamp.WidthPct, unitWidth)
+	}
+}
+
+// TestPositionEventsOnGridExpandsIntoColumnFreedByAnEarlierEvent covers the
+// case where expansion should actually happen: a later event reuses a
+// column an earlier, unrelated event has already vacated, freeing a
+// further column for it to expand into.
+//
+// Column assignment for same-start events is greedy-by-ascending-end (C
+// ends soonest, so it's placed first): C -> col 0, B -> col 1 (can't reuse
+// col 0, C hasn't ended yet), A -> col 2 (can't reuse col 0 or col 1
+// either). D starts at 9:30, exactly when C's col 0 slot frees up, so D
+// reuses col 0. From there, col 1 (B, which ended at 9:30) no longer
+// overlaps D's 9:30-10:00 span, so D should expand into col 1 - but col 2
+// (A, still running until noon) does overlap D, so the expansion must stop
+// there rather than reaching the track's right edge.
+func TestPositionEventsOnGridExpandsIntoColumnFreedByAnEarlierEvent(t *testing.T) {
+	grid := weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22}
+	day := time.Date(2026, 7, 27, 0, 0, 0, 0, time.Local)
+	events := []models.Event{
+		{Summary: "A", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(12 * time.Hour)},
+		{Summary: "B", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(9*time.Hour + 30*time.Minute)},
+		{Summary: "C", StartsAt: day.Add(9 * time.Hour), EndsAt: day.Add(9*time.Hour + 15*time.Minute)},
+		{Summary: "D", StartsAt: day.Add(9*time.Hour + 30*time.Minute), EndsAt: day.Add(10 * time.Hour)},
+	}
+
+	got := positionEventsOnGrid(events, grid)
+	unitWidth := weekEventTrackWidthPct/3 - weekEventColumnGutter*2/3
+
+	d := got[3]
+	// D spans columns 0-1 (2 columns), not all 3 - column 2 (A) still
+	// blocks it from reaching the track's right edge.
+	wantWidth := unitWidth*2 + weekEventColumnGutter
+	if diff := d.WidthPct - wantWidth; diff > 0.01 || diff < -0.01 {
+		t.Errorf("D WidthPct = %v, want %v (expanded across 2 columns, blocked by A in column 2)", d.WidthPct, wantWidth)
+	}
+	if diff := d.LeftPct - weekEventTrackLeftPct; diff > 0.01 || diff < -0.01 {
+		t.Errorf("D LeftPct = %v, want %v (reuses column 0, freed by C)", d.LeftPct, weekEventTrackLeftPct)
+	}
+	rightEdge := weekEventTrackLeftPct + weekEventTrackWidthPct
+	if diff := (d.LeftPct + d.WidthPct) - rightEdge; diff > -0.01 {
+		t.Errorf("D should NOT reach the track's right edge (%v) - column 2 (A) is still occupied, got left+width = %v", rightEdge, d.LeftPct+d.WidthPct)
+	}
+}
+
 func TestHourLabelsForGridFixedAndFull24(t *testing.T) {
 	fixed := hourLabelsForGrid(weekGridConfig{Mode: kioskGridModeFixed, StartHour: 6, EndHour: 22})
 	if len(fixed) != 16 {

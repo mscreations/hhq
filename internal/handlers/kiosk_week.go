@@ -18,6 +18,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 
@@ -82,11 +83,24 @@ type weekEvent struct {
 	models.Event
 	TopPct    float64 // 0-100, clipped to the grid range
 	HeightPct float64 // 0-100, clipped to the grid range
+	// LeftPct/WidthPct are the horizontal position/width (percent of the
+	// track), computed by layoutEventColumns so that events overlapping in
+	// time sit side-by-side instead of stacking on top of each other.
+	LeftPct  float64
+	WidthPct float64
 	// Clipped is true when the event's real start/end falls outside the
 	// configured fixed-hours grid range and had to be compressed to the grid
 	// edge to stay visible (never true in full24 mode, since the range is
 	// always the whole day there).
 	Clipped bool
+
+	// startMin/endMin are the real (unclamped) start/end minutes-of-day,
+	// used only by layoutEventColumns to detect overlap - deliberately
+	// distinct from the grid-clamped values used for TopPct/HeightPct, so
+	// column layout reflects true time overlap regardless of the configured
+	// grid range.
+	startMin, endMin int
+	col              int
 }
 
 // weekGridConfig is the resolved (settings-or-default) time-grid range for
@@ -331,9 +345,123 @@ func positionEventsOnGrid(events []models.Event, grid weekGridConfig) []weekEven
 		if we.HeightPct < minEventHeightPct {
 			we.HeightPct = minEventHeightPct
 		}
+		we.startMin, we.endMin = startMin, endMin
 		out = append(out, we)
 	}
+	layoutEventColumns(out)
 	return out
+}
+
+// weekEventTrackLeftPct/weekEventTrackWidthPct reproduce the horizontal
+// margins the event track previously hardcoded in CSS (left: 2%; width:
+// 96%), now used as the usable span that gets split between overlapping
+// columns instead.
+const (
+	weekEventTrackLeftPct  = 2.0
+	weekEventTrackWidthPct = 96.0
+	weekEventColumnGutter  = 0.5
+)
+
+// layoutEventColumns assigns each non-all-day event a horizontal column so
+// that events overlapping in time render side-by-side instead of stacking
+// on top of each other at full width. This is the standard greedy
+// interval-graph coloring calendar UIs use for day-view event layout:
+// sort by start time, place each event in the first column whose last
+// event ends at or before this one starts (opening a new column
+// otherwise), and group consecutive events into overlap "clusters" so an
+// unrelated later event isn't forced to share a column count with an
+// earlier, unrelated group.
+//
+// After column assignment, each event also expands rightward into any
+// further columns that have no event overlapping it for any part of its
+// own time range (see flush's colSpan loop). This only helps when a later
+// column truly has nothing in it during this event's span - if a column to
+// the right contains anything that overlaps even a portion of this event's
+// time range, expansion stops there, since a single rendered block can't
+// be widened for only part of its own height.
+func layoutEventColumns(events []weekEvent) {
+	timed := make([]int, 0, len(events))
+	for i, e := range events {
+		if !e.AllDay {
+			timed = append(timed, i)
+		}
+	}
+	sort.SliceStable(timed, func(a, b int) bool {
+		ea, eb := events[timed[a]], events[timed[b]]
+		if ea.startMin != eb.startMin {
+			return ea.startMin < eb.startMin
+		}
+		return ea.endMin < eb.endMin
+	})
+
+	var cluster []int
+	var columnEnd []int // end-minute of the last event placed in each column
+	clusterMaxEnd := -1
+
+	flush := func() {
+		if len(cluster) == 0 {
+			return
+		}
+		numCols := len(columnEnd)
+		unitWidth := weekEventTrackWidthPct/float64(numCols) - weekEventColumnGutter*float64(numCols-1)/float64(numCols)
+		for _, idx := range cluster {
+			e := &events[idx]
+			// Expand rightward past this event's own column into any
+			// further-right columns that are still empty for its entire
+			// time range, so an event with no real conflict (e.g. it only
+			// shares a cluster with something that ends before it starts
+			// using the grid space) fills the space instead of sitting at
+			// a cramped fixed column width.
+			lastCol := e.col
+			for testCol := e.col + 1; testCol < numCols; testCol++ {
+				blocked := false
+				for _, otherIdx := range cluster {
+					other := &events[otherIdx]
+					if other.col == testCol && e.startMin < other.endMin && other.startMin < e.endMin {
+						blocked = true
+						break
+					}
+				}
+				if blocked {
+					break
+				}
+				lastCol = testCol
+			}
+			colSpan := lastCol - e.col + 1
+			e.WidthPct = unitWidth*float64(colSpan) + weekEventColumnGutter*float64(colSpan-1)
+			e.LeftPct = weekEventTrackLeftPct + float64(e.col)*(unitWidth+weekEventColumnGutter)
+		}
+		cluster = cluster[:0]
+		columnEnd = columnEnd[:0]
+		clusterMaxEnd = -1
+	}
+
+	for _, idx := range timed {
+		e := &events[idx]
+		if len(cluster) > 0 && e.startMin >= clusterMaxEnd {
+			flush()
+		}
+
+		placed := false
+		for c, end := range columnEnd {
+			if end <= e.startMin {
+				columnEnd[c] = e.endMin
+				e.col = c
+				placed = true
+				break
+			}
+		}
+		if !placed {
+			e.col = len(columnEnd)
+			columnEnd = append(columnEnd, e.endMin)
+		}
+
+		cluster = append(cluster, idx)
+		if e.endMin > clusterMaxEnd {
+			clusterMaxEnd = e.endMin
+		}
+	}
+	flush()
 }
 
 func gridRangeMinutes(grid weekGridConfig) (start, end int) {
