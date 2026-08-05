@@ -64,7 +64,7 @@ type weekDay struct {
 	Label   string // "Today"/"Tomorrow"/"Monday, Jan 2" - reuses dayLabel()
 	Date    time.Time
 	DateKey string // "2006-01-02", used to build unique per-column DOM ids
-	Chores  []models.ChoreInstance
+	Chores  []weekChore
 	Events  []weekEvent
 	IsToday bool
 	// HasForecast/WeatherIcon/WeatherHighTemp back the day heading's small
@@ -127,6 +127,17 @@ type weekEvent struct {
 	// grid range.
 	startMin, endMin int
 	col              int
+}
+
+// weekChore wraps a models.ChoreInstance with its child/parent assignee's
+// avatar URL, resolved once per view build via avatarURLsByUserID (kiosk.go)
+// - mirrors weekEvent's wrap-with-server-computed-extras pattern above. The
+// kiosk shows the assignee's avatar instead of their name when one is set
+// (see kiosk/_week_day_chores.html), falling back to the name when
+// AvatarURL is empty.
+type weekChore struct {
+	models.ChoreInstance
+	AvatarURL string
 }
 
 // weekGridConfig is the resolved (settings-or-default) time-grid range for
@@ -194,6 +205,11 @@ func (a *App) buildKioskWeekViewData(r *http.Request) (*kioskWeekViewData, error
 	eventsByDay := groupEventsByDayKey(windowEvents)
 	forecastByDay := forecastDailyByDayKey(a.Weather)
 
+	avatarByUserID, err := a.avatarURLsByUserID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	days := make([]weekDay, 0, weekViewDays)
 	for i := 0; i < weekViewDays; i++ {
 		date := now.AddDate(0, 0, i)
@@ -214,7 +230,7 @@ func (a *App) buildKioskWeekViewData(r *http.Request) (*kioskWeekViewData, error
 			Label:   dayLabel(date),
 			Date:    date,
 			DateKey: key,
-			Chores:  chores,
+			Chores:  attachChoreAvatars(chores, avatarByUserID),
 			Events:  positionEventsOnGrid(eventsByDay[key], grid),
 			IsToday: isToday,
 		}
@@ -294,6 +310,16 @@ func parseHour(s string) (int, bool) {
 		return 0, false
 	}
 	return n, true
+}
+
+// attachChoreAvatars wraps each chore instance with its assignee's avatar
+// URL from the shared avatarByUserID lookup (see weekChore's doc comment).
+func attachChoreAvatars(chores []models.ChoreInstance, avatarByUserID map[int]string) []weekChore {
+	out := make([]weekChore, 0, len(chores))
+	for _, c := range chores {
+		out = append(out, weekChore{ChoreInstance: c, AvatarURL: avatarByUserID[c.ChildID]})
+	}
+	return out
 }
 
 // groupEventsByDayKey groups events by their "2006-01-02" local-date key -
@@ -574,9 +600,14 @@ func (a *App) renderWeekDayChoresFragment(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	avatarByUserID, err := a.avatarURLsByUserID(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	a.renderFragment(w, "kiosk/_week_day_chores", weekDay{
 		DateKey: dateKey,
-		Chores:  chores,
+		Chores:  attachChoreAvatars(chores, avatarByUserID),
 	})
 }

@@ -12,7 +12,7 @@
       {{end}}
       {{end}}
       data-chore-id="{{.ID}}">
-    <span class="chore-name">{{.ChildName}}: {{.ChoreName}}</span>
+    <span class="chore-name">{{if .AvatarURL}}<img class="chore-child-avatar" src="{{.AvatarURL}}" alt="{{.ChildName}}">{{else}}{{.ChildName}}: {{end}}{{.ChoreName}}</span>
     {{if .IsLate}}<span class="chore-late-badge">LATE</span>{{end}}
     {{if eq (printf "%v" .Status) "approved"}}<span class="chore-star">★</span>{{end}}
     {{if eq (printf "%v" .Status) "pending_approval"}}<span class="chore-pending">awaiting parent...</span>{{end}}

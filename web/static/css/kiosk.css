@@ -378,9 +378,17 @@ body {
   padding: 0.3vh 0.4vw;
   max-height: 20vh;
   overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 0.4vw;
+  align-content: start;
 }
 
+.week-chore-list .empty-state { grid-column: 1 / -1; }
+
 .week-chore-list .chore-item { font-size: 0.8vw; padding: 0.5vh 0.5vw; margin-bottom: 0.3vh; }
+
+.week-chore-list .chore-child-avatar { width: 1.2vw; height: 1.2vw; min-width: 16px; min-height: 16px; vertical-align: middle; margin-right: 0.3vw; }
 
 .week-allday-cell {
   background: var(--panel-bg);
