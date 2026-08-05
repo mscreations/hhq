@@ -1,0 +1,140 @@
+/* Canonical hhq theme contract - the CSS-native mirror of
+   internal/theme/theme.go (kept in sync by hand, no shared generator; see
+   that file's doc comment). Every --hhq-* variable listed here is also
+   documented in PLUGINS.md's "Theming" section as the stable set a plugin
+   may reference (e.g. var(--hhq-text)) when styling a view fragment that
+   gets inlined into this page, or a settings page that gets these same
+   values injected as an inline <style> block (see
+   internal/plugins/proxy.go's injectThemeVariables).
+
+   Selected via html[data-theme="<name>"]. The default theme ("dark") also
+   applies via :root (no attribute needed) and via the
+   prefers-color-scheme fallback below, for a first visit before any
+   choice has been made. */
+
+:root,
+html[data-theme="dark"] {
+  --hhq-bg: #111418;
+  --hhq-panel-bg: #1b1f26;
+  --hhq-border: #2a2f38;
+  --hhq-text: #f0f2f5;
+  --hhq-text-dim: #9aa3af;
+  --hhq-accent: #5b9bf6;
+  --hhq-green: #34d399;
+  --hhq-red: #f87171;
+  --hhq-amber: #fbbf24;
+  --hhq-gold: #ffd700;
+}
+
+html[data-theme="light"] {
+  --hhq-bg: #f7f8fa;
+  --hhq-panel-bg: #ffffff;
+  --hhq-border: #e2e5e9;
+  --hhq-text: #1c1f24;
+  --hhq-text-dim: #6b7280;
+  --hhq-accent: #3B82F6;
+  --hhq-green: #22c55e;
+  --hhq-red: #ef4444;
+  --hhq-amber: #f59e0b;
+  --hhq-gold: #caa000;
+}
+
+html[data-theme="midnight"] {
+  --hhq-bg: #0d1526;
+  --hhq-panel-bg: #16213a;
+  --hhq-border: #26355a;
+  --hhq-text: #e8edf7;
+  --hhq-text-dim: #8fa3c4;
+  --hhq-accent: #6c8ff8;
+  --hhq-green: #3ddc97;
+  --hhq-red: #ff6b81;
+  --hhq-amber: #ffce54;
+  --hhq-gold: #ffd700;
+}
+
+html[data-theme="forest"] {
+  --hhq-bg: #0f1f16;
+  --hhq-panel-bg: #16291d;
+  --hhq-border: #2c4433;
+  --hhq-text: #eaf3ec;
+  --hhq-text-dim: #93b39e;
+  --hhq-accent: #5fae7a;
+  --hhq-green: #4fbd6f;
+  --hhq-red: #e2665b;
+  --hhq-amber: #d8a657;
+  --hhq-gold: #e8d27a;
+}
+
+html[data-theme="sky"] {
+  --hhq-bg: #eaf4fb;
+  --hhq-panel-bg: #ffffff;
+  --hhq-border: #cfe6f5;
+  --hhq-text: #16232b;
+  --hhq-text-dim: #55707f;
+  --hhq-accent: #2196c9;
+  --hhq-green: #22c55e;
+  --hhq-red: #ef4444;
+  --hhq-amber: #f59e0b;
+  --hhq-gold: #caa000;
+}
+
+html[data-theme="lavender"] {
+  --hhq-bg: #f3effa;
+  --hhq-panel-bg: #ffffff;
+  --hhq-border: #e2d6f0;
+  --hhq-text: #241b33;
+  --hhq-text-dim: #7a6a92;
+  --hhq-accent: #8b5cf6;
+  --hhq-green: #22c55e;
+  --hhq-red: #ef4444;
+  --hhq-amber: #f59e0b;
+  --hhq-gold: #b8860b;
+}
+
+html[data-theme="peach"] {
+  --hhq-bg: #fdf1e7;
+  --hhq-panel-bg: #ffffff;
+  --hhq-border: #f3d9bf;
+  --hhq-text: #3a2416;
+  --hhq-text-dim: #8a6a4f;
+  --hhq-accent: #f97316;
+  --hhq-green: #22c55e;
+  --hhq-red: #ef4444;
+  --hhq-amber: #b45309;
+  --hhq-gold: #b8860b;
+}
+
+/* OS-level fallback for a browser that hasn't made an explicit choice yet
+   (no data-theme attribute set at all) - mirrors the "dark" theme above.
+   Once a choice is made (light, dark, or any named theme), the
+   html[data-theme="..."] rules above take precedence regardless of OS
+   preference. */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    --hhq-bg: #111418;
+    --hhq-panel-bg: #1b1f26;
+    --hhq-border: #2a2f38;
+    --hhq-text: #f0f2f5;
+    --hhq-text-dim: #9aa3af;
+    --hhq-accent: #5b9bf6;
+    --hhq-green: #34d399;
+    --hhq-red: #f87171;
+    --hhq-amber: #fbbf24;
+    --hhq-gold: #ffd700;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    --hhq-bg: #f7f8fa;
+    --hhq-panel-bg: #ffffff;
+    --hhq-border: #e2e5e9;
+    --hhq-text: #1c1f24;
+    --hhq-text-dim: #6b7280;
+    --hhq-accent: #3B82F6;
+    --hhq-green: #22c55e;
+    --hhq-red: #ef4444;
+    --hhq-amber: #f59e0b;
+    --hhq-gold: #caa000;
+  }
+}

@@ -1,0 +1,14 @@
+{{/* Shared theme <select>, used by every parent-facing page (login, setup,
+     forgot/reset password, invite-accept, dashboard, calendar account edit).
+     Pass an ExtraClass (e.g. "login-theme-toggle" for the standalone pages
+     that position it absolutely; "" for pages, like the dashboard, that lay
+     it out inline in a nav bar already). Populated from the "themes"
+     template func (internal/theme.Available), not per-page data, so every
+     caller works without threading a Themes field through its own handler. */}}
+{{define "parent/_theme_picker"}}
+<select id="theme-select" class="theme-toggle {{.ExtraClass}}" onchange="setTheme(this.value)" aria-label="Color theme">
+  {{range themes}}
+  <option value="{{.Name}}">{{.Label}}</option>
+  {{end}}
+</select>
+{{end}}

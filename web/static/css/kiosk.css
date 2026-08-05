@@ -1,10 +1,21 @@
+/* Local variable names used throughout the rest of this file, aliased to
+   the canonical --hhq-* theme contract (web/static/css/themes.css,
+   internal/theme/theme.go - loaded before this file, see
+   kiosk/index.html) rather than renaming every existing var(--bg)/
+   var(--panel-bg) usage below. Selected via data-theme on <html>, set
+   server-side from the kiosk_theme setting (internal/handlers/kiosk.go's
+   KioskIndex) - unlike the parent dashboard, the kiosk has no client-side
+   picker of its own, since it's a shared wall display, not a per-browser
+   preference. */
 :root {
-  --bg: #111418;
-  --panel-bg: #1b1f26;
-  --text: #f0f2f5;
-  --text-dim: #9aa3af;
-  --border: #2a2f38;
-  --gold: #ffd700;
+  --bg: var(--hhq-bg);
+  --panel-bg: var(--hhq-panel-bg);
+  --text: var(--hhq-text);
+  --text-dim: var(--hhq-text-dim);
+  --border: var(--hhq-border);
+  --gold: var(--hhq-gold);
+  --red: var(--hhq-red);
+  --green: var(--hhq-green);
 }
 
 * { box-sizing: border-box; }
@@ -240,12 +251,12 @@ body {
 .chore-status-pending_approval { opacity: 0.7; cursor: default; }
 .chore-pending { color: var(--text-dim); font-size: 0.85vw; font-style: italic; }
 
-.chore-status-rejected { border: 1px solid #ef4444; }
-.chore-rejected { color: #ef4444; font-size: 0.85vw; }
+.chore-status-rejected { border: 1px solid var(--red); }
+.chore-rejected { color: var(--red); font-size: 0.85vw; }
 
-.chore-late { border: 2px solid #ef4444; }
+.chore-late { border: 2px solid var(--red); }
 .chore-late-badge {
-  color: #ef4444;
+  color: var(--red);
   font-size: 0.85vw;
   font-weight: 700;
   text-transform: uppercase;
@@ -466,7 +477,7 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: #ef4444;
+  background: var(--red);
   z-index: 5;
   pointer-events: none;
 }
@@ -479,7 +490,7 @@ body {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #ef4444;
+  background: var(--red);
 }
 
 .modal-backdrop {
@@ -541,7 +552,7 @@ body {
   cursor: pointer;
 }
 
-.chore-confirm-btn-confirm { background: #22c55e; color: #0a0a0a; }
+.chore-confirm-btn-confirm { background: var(--green); color: #0a0a0a; }
 .chore-confirm-btn-cancel { background: var(--border); color: var(--text); }
 
 .event-detail {
@@ -602,7 +613,7 @@ body {
   border-radius: 8px;
   border: none;
   cursor: pointer;
-  background: #22c55e;
+  background: var(--green);
   color: #0a0a0a;
 }
 

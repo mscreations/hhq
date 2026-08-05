@@ -2,28 +2,30 @@
 // before the page body renders) to avoid a flash of the wrong theme.
 (function () {
   const saved = localStorage.getItem('hhq-theme');
-  if (saved === 'dark' || saved === 'light') {
+  if (saved) {
     document.documentElement.setAttribute('data-theme', saved);
   }
 })();
 
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') ||
-    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('hhq-theme', next);
-  const btn = document.getElementById('theme-toggle-btn');
-  if (btn) btn.textContent = next === 'dark' ? 'Light Mode' : 'Dark Mode';
+// Sets the active theme by name (any value from the "themes" template
+// func / internal/theme.Available - not just light/dark). Persisted to
+// localStorage (the client-side source of truth, read by the inline
+// pre-render script above) AND mirrored to a plain, non-HttpOnly cookie
+// so server-side code - specifically internal/plugins/proxy.go's
+// ProxySettings, which proxies a plugin's settings page as its own
+// standalone document that can't inherit this page's CSS - can read the
+// current theme choice without a client round trip.
+function setTheme(name) {
+  document.documentElement.setAttribute('data-theme', name);
+  localStorage.setItem('hhq-theme', name);
+  document.cookie = 'hhq_theme=' + encodeURIComponent(name) + '; path=/; max-age=31536000; samesite=lax';
+  document.querySelectorAll('#theme-select').forEach((sel) => { sel.value = name; });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('theme-toggle-btn');
-  if (btn) {
-    const current = document.documentElement.getAttribute('data-theme') ||
-      (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    btn.textContent = current === 'dark' ? 'Light Mode' : 'Dark Mode';
-  }
+  const current = document.documentElement.getAttribute('data-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.querySelectorAll('#theme-select').forEach((sel) => { sel.value = current; });
   updateChoreKindFields();
   updateChoreSelection();
   updateChoreAssigneeFields();

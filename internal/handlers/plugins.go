@@ -259,8 +259,20 @@ func (a *App) PluginSettingsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	csrfToken := a.SessionMgr.CSRFToken(a.CSRF, r)
+	// The hhq_theme cookie is a plain, non-HttpOnly cookie parent.js sets
+	// alongside its localStorage theme choice (see web/static/js/parent.js's
+	// setTheme) specifically so server-side code can read the parent's
+	// current theme - needed here because a plugin's settings page is a
+	// standalone document (see plugins.ProxySettings) that can't inherit
+	// hhq's own page CSS/theme variables the way an inlined kiosk view can.
+	// A missing/unrecognized cookie value falls back to the default theme
+	// inside ProxySettings' injectThemeVariables, not here.
+	var themeName string
+	if c, err := r.Cookie("hhq_theme"); err == nil {
+		themeName = c.Value
+	}
 	_, err = retryOnForbidden(r.Context(), a, *plugin, token, func(token string) (struct{}, error) {
-		return struct{}{}, plugins.ProxySettings(w, r, plugin.BaseURL, token, csrfToken)
+		return struct{}{}, plugins.ProxySettings(w, r, plugin.BaseURL, token, csrfToken, themeName)
 	})
 	if err != nil {
 		// ProxySettings only returns an error when it couldn't reach the

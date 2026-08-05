@@ -36,6 +36,7 @@ import (
 	"github.com/mscreations/hhq/internal/models"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
+	"github.com/mscreations/hhq/internal/theme"
 	"github.com/mscreations/hhq/internal/weather"
 )
 
@@ -66,6 +67,10 @@ type parentDashboardData struct {
 	KioskGridMode      string
 	KioskGridStartHour int
 	KioskGridEndHour   int
+	// KioskTheme is the kiosk_theme setting's value (see kiosk.go's
+	// settingKioskTheme) - a name from internal/theme.Available, rendered by
+	// the "themes" template func's list, not this struct.
+	KioskTheme string
 	// WeeklyReportWeekday/Hour are the effective (settings-override-or-
 	// config-default) schedule for the automatic weekly report email - see
 	// scheduler.loadWeeklyReportSchedule. Weekdays holds the Sunday..Saturday
@@ -191,6 +196,10 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 	if err != nil {
 		return nil, err
 	}
+	kioskTheme, err := a.Settings.Get(ctx, settingKioskTheme, theme.DefaultName)
+	if err != nil {
+		return nil, err
+	}
 	kioskGrid, err := a.loadWeekGridConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -290,6 +299,7 @@ func (a *App) buildParentDashboardData(r *http.Request) (*parentDashboardData, e
 		WeatherUnits:          weatherUnits,
 		WeatherRadarZoom:      weatherRadarZoom,
 		KioskLayout:           kioskLayout,
+		KioskTheme:            theme.ByName(kioskTheme).Name,
 		KioskGridMode:         kioskGrid.Mode,
 		KioskGridStartHour:    kioskGrid.StartHour,
 		KioskGridEndHour:      kioskGrid.EndHour,
@@ -550,7 +560,7 @@ func (a *App) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// The 4 kiosk fields below are all blank-means-keep-existing (same
+	// The kiosk fields below are all blank-means-keep-existing (same
 	// convention as weekly_report_weekday/hour above), so posting this form
 	// without them - e.g. a request that predates this feature, or any
 	// partial submission - never clobbers an already-configured layout.
@@ -560,6 +570,19 @@ func (a *App) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := a.Settings.Set(r.Context(), settingKioskLayout, kioskLayoutStr); err != nil {
 			logging.Errorf("parent: updating kiosk_layout setting: %v", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if kioskThemeStr := r.FormValue("kiosk_theme"); kioskThemeStr != "" {
+		if !theme.IsValidName(kioskThemeStr) {
+			logging.Warnf("parent: rejecting unknown kiosk_theme %q", kioskThemeStr)
+			a.respondSettingsError(w, r, "Not a recognized theme: "+kioskThemeStr)
+			return
+		}
+		if err := a.Settings.Set(r.Context(), settingKioskTheme, kioskThemeStr); err != nil {
+			logging.Errorf("parent: updating kiosk_theme setting: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

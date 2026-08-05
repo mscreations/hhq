@@ -45,6 +45,7 @@ import (
 	"github.com/mscreations/hhq/internal/plugins"
 	"github.com/mscreations/hhq/internal/release"
 	"github.com/mscreations/hhq/internal/scheduler"
+	"github.com/mscreations/hhq/internal/theme"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
 	webassets "github.com/mscreations/hhq/web"
@@ -231,6 +232,7 @@ func main() {
 		"colorName":       models.ColorName,
 		"attachmentLabel": attachmentLabel,
 		"dict":            templateDict,
+		"themes":          theme.Available,
 	}
 	templates := template.Must(template.New("root").Funcs(templateFuncs).ParseFS(webassets.FS, "templates/kiosk/*.html"))
 	templates = template.Must(templates.ParseFS(webassets.FS, "templates/parent/*.html"))

@@ -347,6 +347,55 @@ submit, not a background poll).
   under the same path for some other purpose) - only `text/html` responses
   get the injection treatment described above.
 
+## Theming
+
+hhq supports more than one named color theme (currently Light, Dark,
+Midnight, Forest, Sky Blue, Light Purple, and Pale Orange - see
+`internal/theme/theme.go`, the source of truth for the list). A parent picks the dashboard's theme from a picker in the
+top nav; the kiosk's theme is a separate, parent-configured setting (since
+the kiosk is a shared wall display, not a per-browser preference). **Never
+assume "dark" is the only non-light option**, and never hardcode colors
+that happen to match one theme - a plugin that does will look wrong the
+moment a parent switches to a different theme.
+
+Every theme defines the same fixed set of CSS custom properties:
+
+| Variable | Purpose |
+|---|---|
+| `--hhq-bg` | Page background |
+| `--hhq-panel-bg` | Card/panel background |
+| `--hhq-border` | Border/divider color |
+| `--hhq-text` | Primary text color |
+| `--hhq-text-dim` | Secondary/muted text color |
+| `--hhq-accent` | Links, primary buttons, focus rings |
+| `--hhq-green` | Success/approved state |
+| `--hhq-red` | Error/rejected/late state |
+| `--hhq-amber` | Warning state |
+| `--hhq-gold` | Star/reward accent (e.g. the kiosk's chore-star icon) |
+
+How a plugin sees these variables differs by which endpoint is rendering:
+
+- **`GET /view/{id}`**: the returned HTML fragment is inlined directly
+  into hhq's own kiosk page (see "Response `200 OK`" above) - it is
+  **not** a separate document, so it already inherits hhq's CSS cascade,
+  including whichever theme's `--hhq-*` values are active on `<html
+  data-theme="...">` at that moment. Style your fragment with
+  `var(--hhq-text)`, `var(--hhq-panel-bg)`, etc. instead of hardcoded
+  colors. Use the CSS custom-property fallback syntax
+  (`color: var(--hhq-text-dim, #9aa3af)`) so your view still renders
+  something reasonable against an older hhq version that predates this
+  theme contract, rather than an unstyled/transparent color.
+- **`GET`/`POST /settings`**: unlike a view fragment, this response is a
+  full standalone HTML document (see "Response must be a full, standalone
+  HTML document" above) reverse-proxied through hhq, so it can't inherit
+  `--hhq-*` from hhq's own stylesheets the way an inlined view can. hhq
+  handles this for you: it injects a `<style>:root{--hhq-bg:...;...}</style>`
+  block, with the current theme's resolved values, right after your
+  response's `<head>` tag - the same variable names as above, no action
+  needed on your part beyond referencing them the same way you would in a
+  view fragment. This injection happens alongside the existing
+  CSRF-token and "Back to Dashboard" injections described above.
+
 ## Minimal implementation checklist
 
 To stand up a new plugin from scratch:

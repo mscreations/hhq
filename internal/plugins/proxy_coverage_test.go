@@ -53,6 +53,36 @@ func TestInjectCSRFTokens(t *testing.T) {
 	}
 }
 
+func TestInjectThemeVariablesWithHeadTag(t *testing.T) {
+	html := `<html><head><title>x</title></head><body></body></html>`
+	out := injectThemeVariables(html, "light")
+	headIdx := strings.Index(out, "<head>")
+	styleIdx := strings.Index(out, "<style>:root{")
+	if headIdx == -1 || styleIdx == -1 || styleIdx < headIdx {
+		t.Fatalf("expected theme <style> block right after <head>, got %q", out)
+	}
+	for _, want := range []string{"--hhq-bg:#f7f8fa", "--hhq-accent:#3B82F6", "--hhq-gold:#caa000"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in %q", want, out)
+		}
+	}
+}
+
+func TestInjectThemeVariablesWithoutHeadTag(t *testing.T) {
+	html := `<p>just a fragment</p>`
+	out := injectThemeVariables(html, "dark")
+	if !strings.HasPrefix(out, "<style>:root{") {
+		t.Fatalf("expected theme <style> block prepended, got %q", out)
+	}
+}
+
+func TestInjectThemeVariablesUnknownNameFallsBackToDefault(t *testing.T) {
+	out := injectThemeVariables(`<head></head>`, "not-a-real-theme")
+	if !strings.Contains(out, "--hhq-bg:#111418") {
+		t.Fatalf("expected default (dark) theme values on an unrecognized name, got %q", out)
+	}
+}
+
 func TestProxySettingsGetHTML(t *testing.T) {
 	plugin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -72,7 +102,7 @@ func TestProxySettingsGetHTML(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	ProxySettings(rec, req, plugin.URL, "tok", "csrf-abc")
+	ProxySettings(rec, req, plugin.URL, "tok", "csrf-abc", "dark")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -83,6 +113,9 @@ func TestProxySettingsGetHTML(t *testing.T) {
 	}
 	if !strings.Contains(body, "Back to Dashboard") {
 		t.Fatalf("expected back link injected, got %s", body)
+	}
+	if !strings.Contains(body, "--hhq-bg:#111418") {
+		t.Fatalf("expected dark theme variables injected, got %s", body)
 	}
 }
 
@@ -107,7 +140,7 @@ func TestProxySettingsPostFormRebuiltFromPostForm(t *testing.T) {
 	req.PostForm = url.Values{"action": {"noop"}, "csrf_token": {"tok"}}
 	rec := httptest.NewRecorder()
 
-	ProxySettings(rec, req, plugin.URL, "tok", "csrf-xyz")
+	ProxySettings(rec, req, plugin.URL, "tok", "csrf-xyz", "dark")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -121,7 +154,7 @@ func TestProxySettingsRequestCreationError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	err := ProxySettings(rec, req, ":not-a-url", "tok", "csrf")
+	err := ProxySettings(rec, req, ":not-a-url", "tok", "csrf", "dark")
 
 	if err != nil {
 		t.Fatalf("err = %v, want nil (response already written)", err)
@@ -135,7 +168,7 @@ func TestProxySettingsDoError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	err := ProxySettings(rec, req, "http://127.0.0.1:1", "tok", "csrf")
+	err := ProxySettings(rec, req, "http://127.0.0.1:1", "tok", "csrf", "dark")
 
 	if err == nil {
 		t.Fatal("expected a non-nil error for an unreachable plugin, got nil")
@@ -154,7 +187,7 @@ func TestProxySettingsHTMLReadBodyError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	ProxySettings(rec, req, plugin.URL, "tok", "csrf")
+	ProxySettings(rec, req, plugin.URL, "tok", "csrf", "dark")
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502, body = %s", rec.Code, rec.Body.String())
@@ -172,7 +205,7 @@ func TestProxySettingsNonHTMLCopiesBodyDirectly(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	ProxySettings(rec, req, plugin.URL, "tok", "csrf")
+	ProxySettings(rec, req, plugin.URL, "tok", "csrf", "dark")
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want 201", rec.Code)
@@ -209,7 +242,7 @@ func TestProxySettingsNoContentTypeFromPlugin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/parent/plugins/x/settings", nil)
 	rec := httptest.NewRecorder()
 
-	ProxySettings(rec, req, plugin.URL, "tok", "csrf")
+	ProxySettings(rec, req, plugin.URL, "tok", "csrf", "dark")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())

@@ -10,7 +10,7 @@
       <a href="/parent/report">Download This Week's Report</a>
       <a href="/logout">Sign Out{{if .CurrentUser}} ({{.CurrentUser.Name}}){{end}}</a>
       <button id="settings-gear-btn" class="theme-toggle" onclick="openSettingsModal()" title="Settings" aria-label="Settings">&#9881;</button>
-      <button id="theme-toggle-btn" class="theme-toggle" onclick="toggleTheme()">Dark Mode</button>
+      {{template "parent/_theme_picker" (dict "ExtraClass" "")}}
     </nav>
   </header>
 

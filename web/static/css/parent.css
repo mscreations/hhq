@@ -1,42 +1,20 @@
+/* Local variable names used throughout the rest of this file, aliased to
+   the canonical --hhq-* theme contract (web/static/css/themes.css,
+   internal/theme/theme.go - loaded before this file, see
+   parent/_head.html) rather than renaming every existing var(--bg)/
+   var(--card-bg) usage below. themes.css is what actually varies per
+   theme name (light/dark/midnight/forest/...); this block only ever
+   needs to change if a new *local* alias is introduced. */
 :root {
-  --bg: #f7f8fa;
-  --card-bg: #ffffff;
-  --border: #e2e5e9;
-  --text: #1c1f24;
-  --text-dim: #6b7280;
-  --accent: #3B82F6;
-  --green: #22c55e;
-  --red: #ef4444;
-  --amber: #f59e0b;
-}
-
-/* Dark mode: toggled by adding data-theme="dark" to <html> (see parent.js).
-   Also respects the OS-level preference on first visit, before any manual
-   choice has been saved. */
-html[data-theme="dark"] {
-  --bg: #14171c;
-  --card-bg: #1b1f26;
-  --border: #2a2f38;
-  --text: #f0f2f5;
-  --text-dim: #9aa3af;
-  --accent: #5b9bf6;
-  --green: #34d399;
-  --red: #f87171;
-  --amber: #fbbf24;
-}
-
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme="light"]):not([data-theme="dark"]) {
-    --bg: #14171c;
-    --card-bg: #1b1f26;
-    --border: #2a2f38;
-    --text: #f0f2f5;
-    --text-dim: #9aa3af;
-    --accent: #5b9bf6;
-    --green: #34d399;
-    --red: #f87171;
-    --amber: #fbbf24;
-  }
+  --bg: var(--hhq-bg);
+  --card-bg: var(--hhq-panel-bg);
+  --border: var(--hhq-border);
+  --text: var(--hhq-text);
+  --text-dim: var(--hhq-text-dim);
+  --accent: var(--hhq-accent);
+  --green: var(--hhq-green);
+  --red: var(--hhq-red);
+  --amber: var(--hhq-amber);
 }
 
 * { box-sizing: border-box; }
@@ -271,6 +249,22 @@ input, select, textarea { border: 1px solid var(--border); }
   margin-left: 20px;
 }
 .theme-toggle:hover { color: var(--text); }
+
+/* The theme <select> (#theme-select, see parent/_theme_picker.html) needs
+   an explicit solid background/text color, not the transparent
+   "background: none" above - browsers render a <select>'s OPENED option
+   list as a native popup with its own default (usually white) background
+   regardless of that transparency, and only reliably pick up author
+   colors on the popup's options when background-color/color are set
+   directly rather than inherited. Without this, --text-dim's light-grey
+   value in every dark-ish theme (meant for a dark background) ends up as
+   light-grey-on-white in that popup - unreadable - even though the closed
+   control itself looks fine. */
+select.theme-toggle,
+select.theme-toggle option {
+  background: var(--card-bg);
+  color: var(--text);
+}
 
 .login-theme-toggle {
   position: absolute;

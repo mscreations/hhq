@@ -23,6 +23,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/mscreations/hhq/internal/theme"
 )
 
 // settingsProxyTimeout bounds a proxied GET/POST /settings request. Longer
@@ -56,9 +58,12 @@ var bodyOpenTag = regexp.MustCompile(`(?i)<body[^>]*>`)
 // backLinkHTML is injected as the first thing inside a plugin's <body> -
 // a plugin's settings page is a full standalone HTML document (see
 // ProxySettings' doc comment) with no knowledge of hhq's own dashboard
-// chrome/URLs, so it has no way to render its own "back" link. #3B82F6
-// matches hhq's own dashboard accent color (web/static/css/parent.css).
-const backLinkHTML = `<div style="margin-bottom:1.5em"><a href="/parent" style="color:#3B82F6;text-decoration:none;font-size:14px">&larr; Back to Dashboard</a></div>`
+// chrome/URLs, so it has no way to render its own "back" link.
+// var(--hhq-accent, #3B82F6) resolves against the <style> block
+// injectThemeVariables adds to <head> - the literal fallback (hhq's
+// default dashboard accent) only applies if that injection is somehow
+// missing (e.g. the plugin's response has no <head> at all).
+const backLinkHTML = `<div style="margin-bottom:1.5em"><a href="/parent" style="color:var(--hhq-accent, #3B82F6);text-decoration:none;font-size:14px">&larr; Back to Dashboard</a></div>`
 
 // injectBackLink inserts backLinkHTML right after the opening <body> tag,
 // or prepends it if the plugin's response has no <body> tag (e.g. a bare
@@ -69,6 +74,35 @@ func injectBackLink(html string) string {
 		return backLinkHTML + html
 	}
 	return html[:loc[1]] + backLinkHTML + html[loc[1]:]
+}
+
+// headOpenTag matches a plugin's <head ...> opening tag, so
+// injectThemeVariables knows where to place the theme <style> block.
+var headOpenTag = regexp.MustCompile(`(?i)<head[^>]*>`)
+
+// injectThemeVariables inserts a <style> block defining the current
+// theme's --hhq-* custom properties on :root, right after the opening
+// <head> tag (or prepended if there's no <head> tag at all, mirroring
+// injectBackLink's no-<body> fallback). A plugin's settings page is a
+// standalone document proxied through hhq (see ProxySettings' doc
+// comment) - unlike a kiosk view fragment, which is inlined into hhq's
+// own page and inherits these variables from the cascade for free, a
+// settings page has no way to see hhq's stylesheets at all. This is the
+// settings-page half of the plugin theme contract documented in
+// PLUGINS.md's "Theming" section; themeName is resolved via
+// internal/theme.ByName, which falls back to the default theme for an
+// empty or unrecognized name rather than erroring.
+func injectThemeVariables(html, themeName string) string {
+	v := theme.ByName(themeName).Vars
+	style := fmt.Sprintf(
+		`<style>:root{--hhq-bg:%s;--hhq-panel-bg:%s;--hhq-border:%s;--hhq-text:%s;--hhq-text-dim:%s;--hhq-accent:%s;--hhq-green:%s;--hhq-red:%s;--hhq-amber:%s;--hhq-gold:%s;}</style>`,
+		v.Bg, v.PanelBg, v.Border, v.Text, v.TextDim, v.Accent, v.Green, v.Red, v.Amber, v.Gold,
+	)
+	loc := headOpenTag.FindStringIndex(html)
+	if loc == nil {
+		return style + html
+	}
+	return html[:loc[1]] + style + html[loc[1]:]
 }
 
 // ProxySettings relays r (method, body, content-type) to {baseURL}/settings
@@ -85,7 +119,13 @@ func injectBackLink(html string) string {
 // initial GET's) - so that whichever page the parent's browser ends up on,
 // its forms carry a token VerifyCSRF will accept. Every such response also
 // gets a "Back to Dashboard" link injected (see injectBackLink), since a
-// plugin's settings page is otherwise a dead end back to hhq's own UI.
+// plugin's settings page is otherwise a dead end back to hhq's own UI, and
+// a <style> block defining the current theme's --hhq-* variables (see
+// injectThemeVariables), since a plugin's settings page is a standalone
+// document that can't otherwise see hhq's own theme. themeName is the
+// caller's already-resolved current theme name (PluginSettingsPage reads
+// it from the hhq_theme cookie parent.js sets) - an empty or unrecognized
+// name falls back to the default theme, it never errors this call.
 // ProxySettings' return value is nil once it has written a response to w -
 // including its own error responses for a request-creation failure or a
 // response-body read failure, both of which are effectively-never-happens
@@ -97,7 +137,7 @@ func injectBackLink(html string) string {
 // callWithReauth, which retries this call once with a freshly re-registered
 // token) - so the caller (PluginSettingsPage) can render its own friendlier,
 // modal-driven message instead of dumping a raw dial error onto a bare page.
-func ProxySettings(w http.ResponseWriter, r *http.Request, baseURL, token, csrfToken string) error {
+func ProxySettings(w http.ResponseWriter, r *http.Request, baseURL, token, csrfToken, themeName string) error {
 	ctx, cancel := context.WithTimeout(r.Context(), settingsProxyTimeout)
 	defer cancel()
 
@@ -146,7 +186,8 @@ func ProxySettings(w http.ResponseWriter, r *http.Request, baseURL, token, csrfT
 			return nil
 		}
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.WriteString(w, injectBackLink(injectCSRFTokens(string(body), csrfToken)))
+		out := injectThemeVariables(injectBackLink(injectCSRFTokens(string(body), csrfToken)), themeName)
+		_, _ = io.WriteString(w, out)
 		return nil
 	}
 

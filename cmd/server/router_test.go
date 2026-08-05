@@ -36,6 +36,7 @@ import (
 	"github.com/mscreations/hhq/internal/handlers"
 	"github.com/mscreations/hhq/internal/models"
 	"github.com/mscreations/hhq/internal/testutil"
+	"github.com/mscreations/hhq/internal/theme"
 	"github.com/mscreations/hhq/internal/util"
 	"github.com/mscreations/hhq/internal/weather"
 	webassets "github.com/mscreations/hhq/web"
@@ -136,7 +137,7 @@ type testServer struct {
 // and silently omit fields it needed).
 func newApp(t *testing.T, conn *sql.DB) *handlers.App {
 	t.Helper()
-	templateFuncs := template.FuncMap{"colorName": models.ColorName, "attachmentLabel": attachmentLabel, "dict": templateDict}
+	templateFuncs := template.FuncMap{"colorName": models.ColorName, "attachmentLabel": attachmentLabel, "dict": templateDict, "themes": theme.Available}
 	templates := template.Must(template.New("root").Funcs(templateFuncs).ParseFS(webassets.FS, "templates/kiosk/*.html"))
 	templates = template.Must(templates.ParseFS(webassets.FS, "templates/parent/*.html"))
 

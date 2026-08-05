@@ -72,6 +72,14 @@
             <option value="weekly"{{if eq .KioskLayout "weekly"}} selected{{end}}>5-Day Calendar</option>
           </select>
         </label>
+        <label>Kiosk Theme
+          <select name="kiosk_theme">
+            {{$currentKioskTheme := .KioskTheme}}
+            {{range themes}}
+            <option value="{{.Name}}"{{if eq .Name $currentKioskTheme}} selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+        </label>
         <label>Calendar View Hours
           <select name="kiosk_grid_mode">
             <option value="fixed"{{if ne .KioskGridMode "full24"}} selected{{end}}>Fixed waking hours</option>

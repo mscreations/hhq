@@ -7,7 +7,7 @@
     <h1>Edit Calendar Account</h1>
     <nav>
       <a href="/parent">Back to Dashboard</a>
-      <button id="theme-toggle-btn" class="theme-toggle" onclick="toggleTheme()">Dark Mode</button>
+      {{template "parent/_theme_picker" (dict "ExtraClass" "")}}
     </nav>
   </header>
   <main class="dashboard-grid">

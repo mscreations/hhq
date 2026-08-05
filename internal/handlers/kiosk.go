@@ -27,8 +27,15 @@ import (
 	"github.com/mscreations/hhq/internal/auth"
 	"github.com/mscreations/hhq/internal/logging"
 	"github.com/mscreations/hhq/internal/models"
+	"github.com/mscreations/hhq/internal/theme"
 	"github.com/mscreations/hhq/internal/weather"
 )
+
+// settingKioskTheme is the hhq_settings key holding the kiosk's chosen
+// theme name (see internal/theme.Available) - stored server-side, unlike
+// the parent dashboard's theme.js/localStorage choice, since the kiosk is
+// one shared wall display rather than a per-user browser.
+const settingKioskTheme = "kiosk_theme"
 
 // --- View models for templates ---
 
@@ -60,6 +67,12 @@ type kioskViewData struct {
 // kiosk_layout setting; see KioskIndex.
 type kioskIndexData struct {
 	AppTitle string
+	// Theme is the kiosk_theme setting's value (a name from
+	// internal/theme.Available), set on <html data-theme="..."> in
+	// kiosk/index.html. Unlike the parent dashboard's theme, this is a
+	// server-persisted setting, not a per-browser localStorage choice - the
+	// kiosk is one shared wall display, not a per-user device.
+	Theme string
 	// HomeIsWeek picks which template kiosk/index.html embeds into
 	// #kiosk-view - "kiosk/_week" (with .Home holding *kioskWeekViewData) or
 	// "kiosk/_home" (with .Home holding *kioskViewData).
@@ -85,8 +98,13 @@ func (a *App) KioskIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	themeName, err := a.Settings.Get(ctx, settingKioskTheme, theme.DefaultName)
+	if err != nil {
+		http.Error(w, "failed to load dashboard: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	idata := kioskIndexData{HomeIsWeek: layout == kioskLayoutWeekly}
+	idata := kioskIndexData{HomeIsWeek: layout == kioskLayoutWeekly, Theme: theme.ByName(themeName).Name}
 	if idata.HomeIsWeek {
 		data, err := a.buildKioskWeekViewData(r)
 		if err != nil {
