@@ -74,6 +74,15 @@ type weekDay struct {
 	HasForecast     bool
 	WeatherIcon     string
 	WeatherHighTemp float64
+	// NowTopPct is the "now" line's vertical position (percent of the grid
+	// range), only meaningful when IsToday. Computed server-side and
+	// rendered as an inline style so the line is correctly positioned on
+	// first paint - previously it had no top set until a client-side script
+	// ran on load/after each htmx swap, so it would flash at the top of the
+	// grid (position:absolute with no top resolves to its static position,
+	// which is the very top of the track) before jumping down to the
+	// correct spot.
+	NowTopPct float64
 }
 
 // weekEvent wraps a models.Event with server-computed vertical grid
@@ -191,6 +200,9 @@ func (a *App) buildKioskWeekViewData(r *http.Request) (*kioskWeekViewData, error
 			Chores:  chores,
 			Events:  positionEventsOnGrid(eventsByDay[key], grid),
 			IsToday: isToday,
+		}
+		if isToday {
+			day.NowTopPct = nowLineTopPct(now, grid)
 		}
 		// The forecast icon/high-temp is shown for every day except Today
 		// (per the user's request - Today already has the header's own
@@ -462,6 +474,18 @@ func layoutEventColumns(events []weekEvent) {
 		}
 	}
 	flush()
+}
+
+// nowLineTopPct computes the "now" line's vertical position, as a percent of
+// the grid range, clamped to the range's edges - same formula
+// kiosk.js's updateNowLine used to compute this client-side, kept here so
+// the initial server render already matches what the client-side 10s
+// refresh (which still runs, to move the line smoothly between polls)
+// would otherwise have to fix up after the fact.
+func nowLineTopPct(now time.Time, grid weekGridConfig) float64 {
+	rangeStart, rangeEnd := gridRangeMinutes(grid)
+	nowMin := clampInt(minutesOfDay(now), rangeStart, rangeEnd)
+	return float64(nowMin-rangeStart) / float64(rangeEnd-rangeStart) * 100
 }
 
 func gridRangeMinutes(grid weekGridConfig) (start, end int) {

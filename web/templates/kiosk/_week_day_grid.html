@@ -14,7 +14,7 @@
 
 {{define "kiosk/_week_day_track"}}
 <div class="week-grid-track{{if .IsToday}} week-grid-track-today{{end}}">
-  {{if .IsToday}}<div id="now-line-{{.DateKey}}" class="now-line" data-date="{{.DateKey}}"></div>{{end}}
+  {{if .IsToday}}<div id="now-line-{{.DateKey}}" class="now-line" data-date="{{.DateKey}}" style="top: {{.NowTopPct}}%;"></div>{{end}}
   {{range .Events}}
   {{if not .AllDay}}
   <div class="week-event-block{{if .Clipped}} week-event-clipped{{end}}"
