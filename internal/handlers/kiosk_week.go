@@ -103,6 +103,23 @@ type weekEvent struct {
 	// always the whole day there).
 	Clipped bool
 
+	// ShortDuration is true for events lasting shortEventDurationMinutes or
+	// less (including zero-duration events, padded to a minimum block above)
+	// - on a long grid range, an event this short renders as a very thin
+	// block, too short to stack a summary line and a time line without
+	// clipping. The template uses this to render a single-line block instead
+	// of the usual two-line one, and to hide the time line entirely unless
+	// the block is FullWidth (see below) - otherwise it's just too narrow
+	// too, on a day with overlapping events sharing columns.
+	ShortDuration bool
+
+	// FullWidth is true when this event was not forced to share the track
+	// horizontally with any overlapping sibling (colSpan == numCols in
+	// layoutEventColumns, i.e. it has the entire track width to itself).
+	// Only meaningful for ShortDuration events - see the template's time-line
+	// visibility rule above.
+	FullWidth bool
+
 	// startMin/endMin are the real (unclamped) start/end minutes-of-day,
 	// used only by layoutEventColumns to detect overlap - deliberately
 	// distinct from the grid-clamped values used for TopPct/HeightPct, so
@@ -316,6 +333,11 @@ func forecastDailyByDayKey(cache *weather.Cache) map[string]weather.DayPoint {
 // on the grid rather than collapsing to nothing.
 const minEventHeightPct = 2.0
 
+// shortEventDurationMinutes is the threshold (inclusive) below which an
+// event is considered ShortDuration - see weekEvent.ShortDuration's doc
+// comment.
+const shortEventDurationMinutes = 30
+
 // positionEventsOnGrid computes each event's vertical Top/Height percentage
 // within the configured grid range. All-day events are left unpositioned
 // (Top/HeightPct zero, Clipped false) - the template renders them as a small
@@ -358,6 +380,7 @@ func positionEventsOnGrid(events []models.Event, grid weekGridConfig) []weekEven
 			we.HeightPct = minEventHeightPct
 		}
 		we.startMin, we.endMin = startMin, endMin
+		we.ShortDuration = endMin-startMin <= shortEventDurationMinutes
 		out = append(out, we)
 	}
 	layoutEventColumns(out)
@@ -442,6 +465,7 @@ func layoutEventColumns(events []weekEvent) {
 			colSpan := lastCol - e.col + 1
 			e.WidthPct = unitWidth*float64(colSpan) + weekEventColumnGutter*float64(colSpan-1)
 			e.LeftPct = weekEventTrackLeftPct + float64(e.col)*(unitWidth+weekEventColumnGutter)
+			e.FullWidth = colSpan == numCols
 		}
 		cluster = cluster[:0]
 		columnEnd = columnEnd[:0]

@@ -17,13 +17,15 @@
   {{if .IsToday}}<div id="now-line-{{.DateKey}}" class="now-line" data-date="{{.DateKey}}" style="top: {{.NowTopPct}}%;"></div>{{end}}
   {{range .Events}}
   {{if not .AllDay}}
-  <div class="week-event-block{{if .Clipped}} week-event-clipped{{end}}"
+  <div class="week-event-block{{if .Clipped}} week-event-clipped{{end}}{{if .ShortDuration}} week-event-compact{{end}}"
        style="top: {{.TopPct}}%; height: {{.HeightPct}}%; left: {{.LeftPct}}%; width: {{.WidthPct}}%; background: {{.CalendarColor}}"
        title="{{.AccountName}}/{{.CalendarName}}"
        hx-get="/kiosk/events/{{.ID}}" hx-target="#event-modal-body" hx-swap="innerHTML"
        hx-on::before-request="document.getElementById('event-modal').classList.add('open')">
     <span class="week-event-summary">{{.Summary}}</span>
+    {{if or (not .ShortDuration) .FullWidth}}
     <span class="week-event-time">{{.StartsAt.Format "3:04 PM"}}{{if not .EndsAt.IsZero}} - {{.EndsAt.Format "3:04 PM"}}{{end}}</span>
+    {{end}}
   </div>
   {{end}}
   {{end}}

@@ -412,6 +412,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.1vh;
+  /* A percentage-computed height (see HeightPct/minEventHeightPct) can be
+     just a few px tall for a longer event on a long grid range too, not only
+     the ShortDuration ones .week-event-compact below specifically targets -
+     this floor keeps the normal two-line (summary + time) layout from
+     clipping mid-glyph regardless. */
+  min-height: 3vh;
 }
 
 .week-event-summary {
@@ -427,6 +433,28 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ShortDuration events (see weekEvent.ShortDuration) are too thin on a long
+   grid range to stack a summary line above a time line without clipping.
+   Single-line layout instead; the template only includes .week-event-time
+   at all when the event is FullWidth, since a narrow (column-shared) short
+   event doesn't have room for both even on one line. */
+.week-event-block.week-event-compact {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3vw;
+  min-height: 1.6vh;
+  white-space: nowrap;
+}
+
+.week-event-compact .week-event-summary {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.week-event-compact .week-event-time {
+  flex: 0 0 auto;
 }
 
 .week-event-clipped {
