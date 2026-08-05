@@ -273,8 +273,7 @@ created this way show as "Administratively managed" on the dashboard and
 can't be edited or removed there - the config file is their source of
 truth, so change it and restart instead.
 
-- **`parents.json`** - parent (login) accounts. Replaces the old
-  `BOOTSTRAP_PARENT_NAME`/`_EMAIL`/`_PASSWORD`/`_AVATAR_FILE` env vars, e.g.:
+- **`parents.json`** - parent (login) accounts, e.g.:
   ```json
   [
     {"name": "My Name", "display_name": "Dad", "email": "myemail@mydomain.com", "password": "mypassword", "color": "green", "avatar_file": "avatars/dad.jpg"}
@@ -380,23 +379,37 @@ truth, so change it and restart instead.
   plugin is responsible for knowing its own repo and checking it. A plugin
   that doesn't implement `/version` simply never shows the icon.
 
-  **Authentication is automatic, nothing to configure**: hhq and the plugin
-  agree on a shared secret the first time hhq successfully reaches the
-  plugin's `POST /register` (unauthenticated, since no secret exists yet at
-  that point) - the plugin generates one and returns it, hhq stores it
-  encrypted at rest (same `ENCRYPTION_KEY`-derived AES-256-GCM used for
-  CalDAV passwords) and sends it as `Authorization: Bearer <token>` on every
-  request after that. A plugin only ever issues one token, ever - if the
-  plugin isn't up yet when hhq first tries, hhq retries every 15 seconds
-  until it succeeds, so startup ordering between hhq and its plugins doesn't
-  matter. (If hhq and a plugin ever fall out of sync - e.g. a lost response
-  after the plugin had already stored its token - recovery is manual: clear
-  that plugin's stored token on both sides and restart hhq. See
-  billtracker-plugin's own README for the exact steps.)
+  **Authentication is mostly automatic**: hhq and the plugin agree on a
+  shared per-plugin bearer token the first time hhq successfully reaches the
+  plugin's `POST /register` - the plugin generates the token, returns it,
+  and hhq stores it encrypted at rest (same `ENCRYPTION_KEY`-derived
+  AES-256-GCM used for CalDAV passwords) and sends it as `Authorization:
+  Bearer <token>` on every request after that. `POST /register` itself is
+  *not* unauthenticated, though: it's gated by a separate shared connection
+  secret (`PLUGIN_CONNECTION_SECRET`, sent as an `X-Plugin-Connection-Secret`
+  header), which defaults to `hhq-plugin-connection` on both hhq and the
+  reference plugin so a single-family/single-plugin deployment has nothing
+  to hand-generate - set the env var explicitly (the same value on both
+  sides) if you want a real secret instead of the shared default, e.g. if a
+  plugin's port is reachable from a less-trusted part of your network. If
+  the plugin isn't up yet when hhq first tries to register, hhq retries
+  every 15 seconds until it succeeds, so startup ordering between hhq and
+  its plugins doesn't matter. Recovery if hhq and a plugin ever fall out of
+  sync (e.g. a lost `/register` response after the plugin had already
+  stored its token, or the plugin was redeployed and lost its token store)
+  is automatic, not manual: `POST /register` can succeed and reissue a
+  fresh token any time it's called (not just once per plugin lifetime), so
+  when the plugin responds `403 Forbidden` to hhq's next authenticated
+  request, hhq recognizes that and calls `POST /register` again (with the
+  shared connection secret) to get a fresh token, then retries the original
+  request once - no restart or manual database edit needed. See
+  `PLUGINS.md`'s "Authentication: self-registration" for the full
+  protocol.
 
   On every startup (and periodically thereafter, `PLUGIN_SYNC_INTERVAL_MINUTES`),
-  hhq fetches `{base_url}/manifest` to learn whether the plugin wants a
-  kiosk widget (and its column span/position) and whether it provides
+  hhq fetches `{base_url}/manifest` to learn what kiosk views the plugin
+  wants (any number of them - each gets its own full-screen nav button, not
+  a sized/positioned widget on a shared layout) and whether it provides
   synthetic calendar events; if so, a dedicated synthetic calendar is
   auto-provisioned for it (shown on the parent dashboard's Plugins card like
   any other calendar, but never touched by real CalDAV sync). A plugin's own
@@ -405,7 +418,7 @@ truth, so change it and restart instead.
   by your parent login - the plugin itself never sees your session.
 
   **Trust note**: hhq treats a registered plugin's HTTP responses (its
-  widget HTML, its settings page) as trusted content, not sanitized user
+  view HTML, its settings page) as trusted content, not sanitized user
   input - it's rendered/embedded verbatim into the kiosk and parent
   dashboard. Only point `base_url` at a plugin you wrote or trust as much as
   hhq itself, the same way you'd trust any other code you run in your
@@ -413,14 +426,10 @@ truth, so change it and restart instead.
 
   **Local/dev convenience**: `plugins.json` entries only ever describe
   `id`/`name`/`base_url`/`enabled` - hhq expects the plugin to
-  already be running at `base_url` and never spawns anything itself (there
-  used to be a `command`/`dir` field for that; it was removed since it
-  couldn't be killed cleanly by a debugger's hard-stop on Windows). For
-  local development,
-  launch the plugin as its own VS Code debug session instead - see
-  `.vscode/launch.json`'s `hhq + <plugin>` compound configuration, which
-  starts both and (`stopAll: true`) tears both down together when you hit
-  Stop.
+  already be running at `base_url` and never spawns anything itself. For
+  local development, run the plugin as its own separate process alongside
+  hhq (e.g. its own debug session in your editor) and point `base_url` at
+  wherever it's listening.
 
 ### 7. Point the kiosk browser at `/`
 
@@ -454,48 +463,6 @@ etc.) pointed at your Traefik-exposed URL's root path.
 | `LOG_LEVEL` | no (default `info`) | Set to `debug` for verbose logs: calendar sync detail (principal/home-set discovery, event counts per calendar), email send attempts, per-request logging, chore state transitions, etc. |
 | `LOG_FORMAT` | no (default `text`) | Set to `json` to emit one JSON object per log line (`time`/`level`/`msg`) instead of the default `[LEVEL] message` text format - useful when logs are ingested by an aggregator like Loki/Grafana. |
 | `RELEASE_CHECK_INTERVAL_MINUTES` | no (default 1440) | How often the app polls GitHub for a newer release, to drive the "Update Available" badge on the parent dashboard |
-
-## Known limitations & next steps
-
-This is a solid, working foundation, but some things are intentionally
-simplified given the scope and your "learning Go" goal. In rough priority order
-if you keep building on this:
-
-1. **Authentik/OIDC isn't implemented yet**, but the schema is ready for it:
-   `users.auth_provider` and `users.external_subject` exist specifically so you
-   can add an OIDC login path later that creates/matches a user by subject
-   claim, without a migration. You'd add an `oidc.go` in `internal/auth`
-   implementing the standard authorization-code flow, and a `/login/oidc`
-   route alongside the existing local login.
-2. **Approval links act on GET requests** for simplicity (see the comment in
-   `internal/handlers/approval.go`). If you notice a chore getting
-   auto-approved/rejected without anyone clicking (some email clients
-   prefetch links for safety scanning), switch that handler to render a
-   confirmation page with a POST button instead.
-3. **Single replica only.** The scheduler (calendar sync, weekly email,
-   weather refresh) has no distributed locking, so running 2+ replicas would
-   double-sync and double-email. Fine for a single-family kiosk app; would
-   need a leader election or moving the scheduler to a separate CronJob if
-   you ever needed to scale the web tier.
-4. **CalDAV recurring event expansion** relies on the server correctly
-   expanding recurring events for a calendar-query time-range filter, which
-   both Fastmail and iCloud do - but if you add a more obscure CalDAV server
-   later, some may return raw `RRULE`s needing client-side expansion instead
-   (not implemented here).
-5. **The chore report is generated on-demand from live data**, not stored -
-   if you want historical reports to remain stable/auditable even after data
-   changes later, consider persisting generated PDFs (e.g. to an object store)
-   with a `weekly_reports` table indexing them by week.
-6. **Calendar account edit/delete has no confirmation on edit** (delete does
-   have a JS `confirm()` prompt). Also, the provider field can't be changed
-   after creation - delete and re-add if you need to switch a Fastmail
-   account to "Other CalDAV" or similar.
-7. **Points/rewards system**: only point *values per chore* and a weekly
-   points total in the PDF report exist yet - no redemption/rewards feature
-   has been built on top of points.
-8. **Dark mode preference is per-browser (`localStorage`), not per-user in
-   the database** - if the same parent logs in from a different device, the
-   preference doesn't follow them.
 
 ## Versioning & releases
 
